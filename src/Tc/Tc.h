@@ -1,134 +1,51 @@
-#include "Tc.h"
+#ifndef Tc_h
+#define Tc_h
 
-Tc::Tc( char* tc_types,
-        int cs_tc1 = CS_TC1, 
-        int cs_tc2 = CS_TC2, 
-        int mux0 = MUX0, 
-        int mux1 = MUX1, 
-        int tc1_fault = TC1_FAULT,
-        int tc2_fault = TC2_FAULT
-      ) : max1(cs_tc1), max2(cs_tc2)
+#include <Adafruit_MAX31856.h>
+#define CS_TC1 20
+#define CS_TC2 21
+#define MUX0 16
+#define MUX1 17
+#define TC1_FAULT 25
+#define TC2_FAULT 26
+
+// Encapsulate selection and reading of thermocouple values
+class Tc
 {
-    if(!max1.begin() | !max2.begin()){
-        Serial.println("Could not initialize all thermocouples");
-    }
-    set_types_from_chars(tc_types);
-}
+    public:
+        Tc( char* tc_types, // String of thermocouple types (B, E, J, K, N, R, S, or T)
+            int cs_tc1 = CS_TC1, // Chip select pin for "TC1" MAX31856 
+            int cs_tc2 = CS_TC2, // Chip select pin for "TC2" MAX31856 
+            int mux0 = MUX0,  // Input for mux to select thermocouple output
+            int mux1 = MUX1,  // Input for mux to select thermocouple output
+            int tc1_fault = TC1_FAULT, // Fault pin for "TC1" MAX31856
+            int tc2_fault = TC2_FAULT // Fault pin for "TC2" MAX31856
+        );
+        void read_all(float* arr);
+        void triggerOneShot(int tc);
+        bool conversionComplete(int tc);
+        float readThermocoupleTemperature(int tc);
 
-void Tc::read_all(float* arr){
-    max1.setConversionMode(MAX31856_ONESHOT);
-    max2.setConversionMode(MAX31856_ONESHOT);
+        // Checks if either sensor has a fault.
+        // Returns a uint16_t where the high byte is the fault in TC1
+        // and the low byte is the fault in TC2
+        uint16_t check_faults(void);
 
-    for(int i = 1; i <= 8; i ++){
-        Adafruit_MAX31856 max = get_max_from_tc(i);
-        max.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[i-1]);
-        select_tc(i);
-        //Blocks for ~100 ms
-        float temp = max.readThermocoupleTemperature();
-        arr[i -1] = temp;
-    }
-}
-void Tc::triggerOneShot(int tc){
-    Adafruit_MAX31856 max = get_max_from_tc(tc);
-    max.setConversionMode(MAX31856_ONESHOT_NOWAIT);
-    // Set thermocouple type
-    max.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[tc-1]);
-    // Select thermocouple with mux
-    select_tc(tc);
-    max.triggerOneShot();
-}
+        // Sets appropriate mux outputs to select given tc according to the following mapping:
+        //  MUX0 | MUX1 | TC
+        //--------------------
+        //    0  |  0   | 1, 5
+        //    0  |  1   | 2, 6
+        //    1  |  0   | 3, 7
+        //    1  |  1   | 4, 8
+        void select_tc(int tc);
 
-bool Tc::conversionComplete(int tc){
-    Adafruit_MAX31856 max = get_max_from_tc(tc);
-    return max.conversionComplete();
-}
+    private:
+        Adafruit_MAX31856 max1;// U13 TC to Digital - connected to IC1 mux output of TC 1-4
+        Adafruit_MAX31856 max2;// U12 TC to Digital - connected to IC3 mux output of TC 5-8
+        char tc_type_lookup[8];
+        void set_types_from_chars(char* tc_types);
+        Adafruit_MAX31856 get_max_from_tc(int tc);
+};
 
-float Tc::readThermocoupleTemperature(int tc){
-    Adafruit_MAX31856 max = get_max_from_tc(tc);
-    // Select thermocouple with mux
-    select_tc(tc);
-    return max.readThermocoupleTemperature();
-}
-
-uint16_t Tc::check_faults(void){
-    uint8_t hb = max1.readFault();
-    uint8_t lb = max2.readFault();
-    return ((uint16_t) hb << 8) | lb;
-}
-
-void Tc::select_tc(int tc){
-    if(tc <= 4){
-        tc = tc - 1;
-    }
-    else{
-        tc = tc - 5;
-    }
-
-    switch (tc)
-    {
-    case 0:
-        digitalWrite(MUX0, LOW);
-        digitalWrite(MUX1, LOW);
-        break;
-    case 1:
-        digitalWrite(MUX0, LOW);
-        digitalWrite(MUX1, HIGH);
-        break;
-    case 2:
-        digitalWrite(MUX0, HIGH);
-        digitalWrite(MUX1, LOW);
-        break;
-    case 3:
-        digitalWrite(MUX0, HIGH);
-        digitalWrite(MUX1, HIGH);
-        break;
-    default:
-        break;
-    }
-}
-
-Adafruit_MAX31856 Tc::get_max_from_tc(int tc){
-    if (tc <= 4){
-        return max1;
-    }
-    else{
-        return max2;
-    }
-}
-
-
-void Tc::set_types_from_chars(char* tc_types){
-    for(int i = 0; i < 8; i++){
-        switch (tc_types[i])
-        {
-            case 'B':
-                tc_type_lookup[i] = MAX31856_TCTYPE_B;
-                break;
-            case 'E':
-                tc_type_lookup[i] = MAX31856_TCTYPE_E;
-                break;
-            case 'J':
-                tc_type_lookup[i] = MAX31856_TCTYPE_J;
-                break;
-            case 'K':
-                tc_type_lookup[i] = MAX31856_TCTYPE_K;
-                break;
-            case 'N':
-                tc_type_lookup[i] = MAX31856_TCTYPE_N;
-                break;
-            case 'R':
-                tc_type_lookup[i] = MAX31856_TCTYPE_R;
-                break;
-            case 'S':
-                tc_type_lookup[i] = MAX31856_TCTYPE_S;
-                break;
-            case 'T':
-                tc_type_lookup[i] = MAX31856_TCTYPE_T;
-                break;
-            default:
-                // Type is already defaulted to K by begin() function
-                Serial.println("Cannot set thermocouple type. Default is K");
-                break;
-        } 
-    }
-}
+#endif
