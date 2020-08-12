@@ -87,7 +87,7 @@ void Tc::select_tc(int tc){
     }
 }
 
-Adafruit_MAX31856 Tc::get_max_from_tc(int tc){
+Adafruit_MAX31856& Tc::get_max_from_tc(int tc){
     if (tc <= 4){
         return max1;
     }

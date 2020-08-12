@@ -45,7 +45,7 @@ class Tc
         Adafruit_MAX31856 max2;// U12 TC to Digital - connected to IC3 mux output of TC 5-8
         char tc_type_lookup[8];
         void set_types_from_chars(char* tc_types);
-        Adafruit_MAX31856 get_max_from_tc(int tc);
+        Adafruit_MAX31856& get_max_from_tc(int tc);
 };
 
 #endif
