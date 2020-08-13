@@ -9,10 +9,27 @@ Tc::Tc( char* tc_types,
         int tc2_fault = TC2_FAULT
       ) : max1(cs_tc1), max2(cs_tc2)
 {
+    
+}
+
+void Tc::enable(void){
+    pinMode(mux0, OUTPUT);
+    pinMode(mux1, OUTPUT);
+    // Adafruit_MAX31856::begin() calls Adafruit_SPIDevice::begin()
+    // For hardware SPI (which we are using), this calls SPIClass::begin()
+    // this sets chip select, MOSI, and SCK to output. MISO is always set as input in master mode.
     if(!max1.begin() | !max2.begin()){
         Serial.println("Could not initialize all thermocouples");
     }
     set_types_from_chars(tc_types);
+}
+
+void Tc::disable(void){
+    // Cede control so other processor can control MAX chips
+    pinMode(cs_tc1, INPUT_PULLUP);
+    pinMode(cs_tc2, INPUT_PULLUP);
+    pinMode(mux0, INPUT_PULLUP);
+    pinMode(mux1, INPUT_PULLUP);
 }
 
 void Tc::read_all(float* arr){
