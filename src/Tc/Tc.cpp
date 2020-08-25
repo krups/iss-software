@@ -7,10 +7,12 @@ Tc::Tc( char* tc_types,
         int mux1 = MUX1, 
         int tc1_fault = TC1_FAULT,
         int tc2_fault = TC2_FAULT
-      ) : max1(cs_tc1), max2(cs_tc2)
-{
-    
-}
+      ) 
+      :tc_types(tc_types), cs_tc1(cs_tc1), cs_tc2(cs_tc2),
+      max1(cs_tc1), max2(cs_tc2),
+      mux0(mux0), mux1(mux1),
+      tc1_fault(tc1_fault), tc2_fault(tc2_fault)
+{}
 
 void Tc::enable(void){
     pinMode(mux0, OUTPUT);

@@ -43,8 +43,15 @@ class Tc
         void select_tc(int tc);
 
     private:
+        char* tc_types;
+        int cs_tc1; 
+        int cs_tc2;
         Adafruit_MAX31856 max1;// U13 TC to Digital - connected to IC1 mux output of TC 1-4
         Adafruit_MAX31856 max2;// U12 TC to Digital - connected to IC3 mux output of TC 5-8
+        int mux0;// Input for mux to select thermocouple output
+        int mux1;// Input for mux to select thermocouple output
+        int tc1_fault; // Fault pin for "TC1" MAX31856
+        int tc2_fault;         
         char tc_type_lookup[8];
         void set_types_from_chars(char* tc_types);
         Adafruit_MAX31856& get_max_from_tc(int tc);
