@@ -1,5 +1,7 @@
 #include "TcInterface.h"
 
+#if defined(ADAFRUIT_TRINKET_M0) || defined(__MK64FX512__)
+
 TcInterface::TcInterface( char* tc_types,
         int cs_tc1 = CS_TC1, 
         int cs_tc2 = CS_TC2, 
@@ -151,3 +153,5 @@ void TcInterface::set_types_from_chars(char* tc_types){
         } 
     }
 }
+
+#endif
