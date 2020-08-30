@@ -1,19 +1,31 @@
-#ifndef Tc_h
-#define Tc_h
+#ifndef TcInterface_h
+#define TcInterface_h
 
 #include <Adafruit_MAX31856.h>
-#define CS_TC1 20
-#define CS_TC2 21
-#define MUX0 16
-#define MUX1 17
-#define TC1_FAULT 25
-#define TC2_FAULT 26
+
+// switch pin defs based depending on if this
+// code is running on the safety processor or the 
+// main Teensy 3.5
+#if defined(ADAFRUIT_TRINKET_M0)
+//
+// TODO: insert safety processor pins for TC interface
+//
+#elif defined(__MK64FX512__) // teensy 3.5
+  #define CS_TC1 20
+  #define CS_TC2 21
+  #define MUX0 16
+  #define MUX1 17
+  #define TC1_FAULT 25
+  #define TC2_FAULT 26
+#else
+#error "Unsupported TC pin config, plz fix TcInterface.h"
+#endif
 
 // Encapsulate selection and reading of thermocouple values
-class Tc
+class TcInterface
 {
     public:
-        Tc( char* tc_types, // String of thermocouple types (B, E, J, K, N, R, S, or T)
+        TcInterface( char* tc_types, // String of thermocouple types (B, E, J, K, N, R, S, or T)
             int cs_tc1 = CS_TC1, // Chip select pin for "TC1" MAX31856 
             int cs_tc2 = CS_TC2, // Chip select pin for "TC2" MAX31856 
             int mux0 = MUX0,  // Input for mux to select thermocouple output

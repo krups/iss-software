@@ -1,6 +1,6 @@
-#include "Tc.h"
+#include "TcInterface.h"
 
-Tc::Tc( char* tc_types,
+TcInterface::TcInterface( char* tc_types,
         int cs_tc1 = CS_TC1, 
         int cs_tc2 = CS_TC2, 
         int mux0 = MUX0, 
@@ -14,7 +14,7 @@ Tc::Tc( char* tc_types,
       tc1_fault(tc1_fault), tc2_fault(tc2_fault)
 {}
 
-void Tc::enable(void){
+void TcInterface::enable(void){
     pinMode(mux0, OUTPUT);
     pinMode(mux1, OUTPUT);
     // Adafruit_MAX31856::begin() calls Adafruit_SPIDevice::begin()
@@ -26,7 +26,7 @@ void Tc::enable(void){
     set_types_from_chars(tc_types);
 }
 
-void Tc::disable(void){
+void TcInterface::disable(void){
     // Cede control so other processor can control MAX chips
     pinMode(cs_tc1, INPUT_PULLUP);
     pinMode(cs_tc2, INPUT_PULLUP);
@@ -34,7 +34,7 @@ void Tc::disable(void){
     pinMode(mux1, INPUT_PULLUP);
 }
 
-void Tc::read_all(float* arr){
+void TcInterface::read_all(float* arr){
     max1.setConversionMode(MAX31856_ONESHOT);
     max2.setConversionMode(MAX31856_ONESHOT);
 
@@ -47,7 +47,7 @@ void Tc::read_all(float* arr){
         arr[i -1] = temp;
     }
 }
-void Tc::triggerOneShot(int tc){
+void TcInterface::triggerOneShot(int tc){
     Adafruit_MAX31856 max = get_max_from_tc(tc);
     max.setConversionMode(MAX31856_ONESHOT_NOWAIT);
     // Set thermocouple type
@@ -57,25 +57,25 @@ void Tc::triggerOneShot(int tc){
     max.triggerOneShot();
 }
 
-bool Tc::conversionComplete(int tc){
+bool TcInterface::conversionComplete(int tc){
     Adafruit_MAX31856 max = get_max_from_tc(tc);
     return max.conversionComplete();
 }
 
-float Tc::readThermocoupleTemperature(int tc){
+float TcInterface::readThermocoupleTemperature(int tc){
     Adafruit_MAX31856 max = get_max_from_tc(tc);
     // Select thermocouple with mux
     select_tc(tc);
     return max.readThermocoupleTemperature();
 }
 
-uint16_t Tc::check_faults(void){
+uint16_t TcInterface::check_faults(void){
     uint8_t hb = max1.readFault();
     uint8_t lb = max2.readFault();
     return ((uint16_t) hb << 8) | lb;
 }
 
-void Tc::select_tc(int tc){
+void TcInterface::select_tc(int tc){
     if(tc <= 4){
         tc = tc - 1;
     }
@@ -106,7 +106,7 @@ void Tc::select_tc(int tc){
     }
 }
 
-Adafruit_MAX31856& Tc::get_max_from_tc(int tc){
+Adafruit_MAX31856& TcInterface::get_max_from_tc(int tc){
     if (tc <= 4){
         return max1;
     }
@@ -116,7 +116,7 @@ Adafruit_MAX31856& Tc::get_max_from_tc(int tc){
 }
 
 
-void Tc::set_types_from_chars(char* tc_types){
+void TcInterface::set_types_from_chars(char* tc_types){
     for(int i = 0; i < 8; i++){
         switch (tc_types[i])
         {
