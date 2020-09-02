@@ -7,15 +7,18 @@
 // code is running on the safety processor or the 
 // main Teensy 3.5
 #if defined(ADAFRUIT_TRINKET_M0)
-// TODO: these need to be finalized. pins also need to be added to the variant.h and variant.cpp 
-//       hardware definitons in the adafruit boards package files to support the extra four pins
-//       used for mux select and tc_fault signals
-//  #define CS_TC1 1
-//  #define CS_TC2 13
-//  #define MUX0 9
-//  #define MUX1 10
-//  #define TC1_FAULT 11
-//  #define TC2_FAULT 12
+  #define MOSI_PIN    4
+  #define SCK_PIN     3
+  #define MISO_PIN    2
+  #define CS_TC1      1
+  #define CS_TC2      13
+  #define SEC_CTRL_2  0
+  #define SEC_ACT     7
+  #define SEC_CTRL_1  8
+  #define MUX0        23
+  #define MUX1        24
+  #define TC1_FAULT   21
+  #define TC2_FAULT   22
 #elif defined(__MK64FX512__) // teensy 3.5
   #define CS_TC1 20
   #define CS_TC2 21
