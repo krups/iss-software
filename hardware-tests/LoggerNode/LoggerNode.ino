@@ -6,6 +6,9 @@
  * RFM69_HCW ISM band radio
  * 
  * meant to be loaded onto the flight computer
+ * 
+ * see the following link regarding sending structs
+ * https://arduino.stackexchange.com/questions/45066/radiohead-library-nrf24-sending-and-receiving-struct-data-problem
  */
 
 // radio logger node class needs this defined

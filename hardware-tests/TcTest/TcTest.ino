@@ -12,6 +12,8 @@ TcInterface tc(types);
 
 void setup() {
   Serial.begin(115200);
+
+  delay(2000);
   // put your setup code here, to run once:
   tc.enable();
 }
@@ -24,6 +26,8 @@ void loop() {
 
   for( int i=0; i<8; i++ ){
     Serial.print(vals[i]); Serial.print(", ");
+    
   }
   Serial.println();
+  delay(10);
 }
