@@ -23,7 +23,7 @@ TcInterface tc(types);
 Threads::Mutex spi_lock;
 
 struct tc_reading {
-  float val;
+  float data;
   bool valid;
 };
 
@@ -45,6 +45,7 @@ void tc_thread(int inc) {
     spi_lock.unlock();
     
     for( int i=0; i<8; i++ ){
+      tcVals[i].data = vals[i];
       Serial.print(vals[i]); Serial.print(", ");
     }
     Serial.println();
@@ -64,7 +65,11 @@ void radio_thread(int inc) {
 
   while(1) {
     threads.delay(1000);
-    String data("Hello base station\n");
+    String data("TC Vals:");
+    for( int i=0; i<8; i++ ){
+      data += " ";
+      data += tcVals[i].data;
+    } data += "\n";
     spi_lock.lock();
     logNode.log(data);
     spi_lock.unlock();
@@ -78,6 +83,7 @@ void setup() {
 
   threads.addThread(tc_thread, 1);
   threads.addThread(radio_thread, 1);
+  //threads.setSliceMillis(10);
 }
 
 void loop() {
