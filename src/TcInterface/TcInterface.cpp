@@ -22,10 +22,12 @@ void TcInterface::enable(void){
     // Adafruit_MAX31856::begin() calls Adafruit_SPIDevice::begin()
     // For hardware SPI (which we are using), this calls SPIClass::begin()
     // this sets chip select, MOSI, and SCK to output. MISO is always set as input in master mode.
-    if(!max1.begin() | !max2.begin()){
+    if(!max1.begin() || !max2.begin()){
         Serial.println("Could not initialize all thermocouples");
     }
     set_types_from_chars(tc_types);
+    //max1.setConversionMode(MAX31856_ONESHOT);
+    //max2.setConversionMode(MAX31856_ONESHOT);
 }
 
 void TcInterface::disable(void){
@@ -36,16 +38,33 @@ void TcInterface::disable(void){
     pinMode(mux1, INPUT_PULLUP);
 }
 
-void TcInterface::read_all(float* arr){
-    max1.setConversionMode(MAX31856_ONESHOT);
-    max2.setConversionMode(MAX31856_ONESHOT);
-
+void TcInterface::read_all(float* arr){  
     for(int i = 1; i <= 8; i ++){
         Adafruit_MAX31856 max = get_max_from_tc(i);
         max.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[i-1]);
         select_tc(i);
+
+        delay(100);
+        
+        uint8_t fault = max.readFault();
+        if (fault) {
+          if (fault & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
+          if (fault & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
+          if (fault & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
+          if (fault & MAX31856_FAULT_CJLOW)   Serial.println("Cold Junction Low Fault");
+          if (fault & MAX31856_FAULT_TCHIGH)  Serial.println("Thermocouple High Fault");
+          if (fault & MAX31856_FAULT_TCLOW)   Serial.println("Thermocouple Low Fault");
+          if (fault & MAX31856_FAULT_OVUV)    Serial.println("Over/Under Voltage Fault");
+          if (fault & MAX31856_FAULT_OPEN)    Serial.println("Thermocouple Open Fault");
+          Serial.print(" on TC "); Serial.println(i);
+        }
+        
         //Blocks for ~100 ms
         float temp = max.readThermocoupleTemperature();
+        
+        
+        
+        
         arr[i -1] = temp;
     }
 }
