@@ -21,6 +21,7 @@ char types[8] = "KKKKKKKK";
 TcInterface tc(types);
 
 Threads::Mutex spi_lock;
+Threads::Mutex ser_lock;
 
 struct tc_reading {
   float data;
@@ -36,48 +37,64 @@ void tc_thread(int inc) {
   spi_lock.lock();
   tc.enable();
   spi_lock.unlock();
+
+  float vals[8] = {0,0,0,0,0,0,0,0};
   
   while(1) {
     float vals[8];
 
+    ser_lock.lock();
     spi_lock.lock();
     tc.read_all(vals);
     spi_lock.unlock();
-    
+    ser_lock.unlock();
+
+    ser_lock.lock();
     for( int i=0; i<8; i++ ){
       tcVals[i].data = vals[i];
       Serial.print(vals[i]); Serial.print(", ");
     }
     Serial.println();
+    ser_lock.unlock();
   }
 }
 
 void radio_thread(int inc) {
-  spi_lock.lock();
   
+  spi_lock.lock();
   if( logNode.begin() ){
-    Serial.println("log node started");
+    //Serial.println("log node started");
     digitalWrite(LED, HIGH);
   } else {
-    Serial.println("log node failed to start");
+    //Serial.println("log node failed to start");
   }
   spi_lock.unlock();
 
   while(1) {
-    threads.delay(1000);
-    String data("TC Vals:");
+    threads.delay(800);
+    String data;
     for( int i=0; i<8; i++ ){
       data += " ";
       data += tcVals[i].data;
     } data += "\n";
+    
     spi_lock.lock();
+    ser_lock.lock();
     logNode.log(data);
+    ser_lock.unlock();
     spi_lock.unlock();
+    
+    digitalWrite(ACT, HIGH);
+    threads.delay(200);
+    digitalWrite(ACT, LOW);
   }
 }
 
 void setup() {
   Serial.begin(115200);
+
+  pinMode(ACT, OUTPUT);
+  pinMode(LED, OUTPUT);
 
   delay(2000);
 
