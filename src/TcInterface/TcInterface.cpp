@@ -16,7 +16,7 @@ TcInterface::TcInterface( char* tc_types,
       tc1_fault(tc1_fault), tc2_fault(tc2_fault)
 {}
 
-void TcInterface::enable(void){
+bool TcInterface::enable(void){
     digitalWrite(SPI_US, HIGH);
     if(digitalRead(SPI_THEM)){
         return false;
