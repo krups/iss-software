@@ -6,7 +6,7 @@
 
 #include "src/TcInterface/TcInterface.h"
 
-char types[8] = "KKKKKKKK";
+char types[9] = "KKKKKKKK";
 
 TcInterface tc(types);
 
