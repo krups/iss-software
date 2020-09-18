@@ -3,71 +3,115 @@
 #if defined(ADAFRUIT_TRINKET_M0) || defined(__MK64FX512__)
 
 TcInterface::TcInterface( char* tc_types,
-        int cs_tc1 = CS_TC1, 
-        int cs_tc2 = CS_TC2, 
-        int mux0 = MUX0, 
-        int mux1 = MUX1, 
-        int tc1_fault = TC1_FAULT,
-        int tc2_fault = TC2_FAULT
+        int cs_tc1, 
+        int cs_tc2 , 
+        int mux0, 
+        int mux1, 
+        int tc1_fault,
+        int tc2_fault
       ) 
       :tc_types(tc_types), cs_tc1(cs_tc1), cs_tc2(cs_tc2),
-      max1(cs_tc1), max2(cs_tc2),
+      max1(cs_tc1, MOSI, MISO, SCK), max2(cs_tc2, MOSI, MISO, SCK),
       mux0(mux0), mux1(mux1),
       tc1_fault(tc1_fault), tc2_fault(tc2_fault)
 {}
 
 void TcInterface::enable(void){
-    pinMode(mux0, OUTPUT);
-    pinMode(mux1, OUTPUT);
-    // Adafruit_MAX31856::begin() calls Adafruit_SPIDevice::begin()
-    // For hardware SPI (which we are using), this calls SPIClass::begin()
-    // this sets chip select, MOSI, and SCK to output. MISO is always set as input in master mode.
-    if(!max1.begin() || !max2.begin()){
-        Serial.println("Could not initialize all thermocouples");
+    digitalWrite(SPI_US, HIGH);
+    if(digitalRead(SPI_THEM)){
+        return false;
     }
-    set_types_from_chars(tc_types);
-    //max1.setConversionMode(MAX31856_ONESHOT);
-    //max2.setConversionMode(MAX31856_ONESHOT);
+    else{
+        pinMode(cs_tc1, OUTPUT);
+        pinMode(cs_tc2, OUTPUT);
+        pinMode(MOSI, OUTPUT);
+        pinMode(SCK, OUTPUT);
+        pinMode(mux0, OUTPUT);
+        pinMode(mux1, OUTPUT);
+        // Adafruit_MAX31856::begin() calls Adafruit_SPIDevice::begin()
+        // For hardware SPI (which we are using), this calls SPIClass::begin()
+        // this sets chip select, MOSI, and SCK to output. MISO is always set as input in master mode.
+        if(!max1.begin() || !max2.begin()){
+            Serial.println("Could not initialize all thermocouples");
+        }
+        set_types_from_chars(tc_types);
+        return true;
+    }
 }
 
 void TcInterface::disable(void){
     // Cede control so other processor can control MAX chips
-    pinMode(cs_tc1, INPUT_PULLUP);
-    pinMode(cs_tc2, INPUT_PULLUP);
-    pinMode(mux0, INPUT_PULLUP);
-    pinMode(mux1, INPUT_PULLUP);
+    pinMode(cs_tc1, INPUT);
+    pinMode(cs_tc2, INPUT);
+    pinMode(MOSI, INPUT);
+    pinMode(SCK, INPUT);
+    pinMode(mux0, INPUT);
+    pinMode(mux1, INPUT);
+    digitalWrite(SPI_US, LOW);
 }
 
-void TcInterface::read_all(float* arr){  
-    for(int i = 1; i <= 8; i ++){
-        Adafruit_MAX31856 max = get_max_from_tc(i);
-        max.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[i-1]);
-        select_tc(i);
-
-        delay(100);
-        
-        uint8_t fault = max.readFault();
-        if (fault) {
-          if (fault & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
-          if (fault & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
-          if (fault & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
-          if (fault & MAX31856_FAULT_CJLOW)   Serial.println("Cold Junction Low Fault");
-          if (fault & MAX31856_FAULT_TCHIGH)  Serial.println("Thermocouple High Fault");
-          if (fault & MAX31856_FAULT_TCLOW)   Serial.println("Thermocouple Low Fault");
-          if (fault & MAX31856_FAULT_OVUV)    Serial.println("Over/Under Voltage Fault");
-          if (fault & MAX31856_FAULT_OPEN)    Serial.println("Thermocouple Open Fault");
-          Serial.print(" on TC "); Serial.println(i);
+bool TcInterface::read_all(float* arr){  
+    static int state = -1;
+    bool complete = max1.conversionComplete() && max2.conversionComplete();
+    if(!complete){
+        return false;
+    }
+    else{
+        if(state >=0){
+            arr[state] = max1.readThermocoupleTemperature();
+            arr[state+4] = max2.readThermocoupleTemperature();
+            if(state == 0){
+                // Before we start another round, check to see 
+                // if we need to let the other processor have control
+                if(digitalRead(SPI_THEM)){
+                    disable();
+                }
+            }
+            if(state == 3){
+                return true;
+            }
         }
-        
-        //Blocks for ~100 ms
-        float temp = max.readThermocoupleTemperature();
-        
-        
-        
-        
-        arr[i -1] = temp;
+        state = (state + 1) % 4;
+        int tc_low = state + 1;
+        int tc_high = state + 5;
+        // U13 TC to Digital - connected to IC1 mux output of TC 1-4
+        max1.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[state]);
+        // U12 TC to Digital - connected to IC3 mux output of TC 5-8
+        max2.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[state+4]);
+        select_tc(tc_low);
+
+        uint8_t fault1 = max1.readFault();
+        uint8_t fault2 = max2.readFault();
+
+        if (fault1) {
+            if (fault & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
+            if (fault & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
+            if (fault & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
+            if (fault & MAX31856_FAULT_CJLOW)   Serial.println("Cold Junction Low Fault");
+            if (fault & MAX31856_FAULT_TCHIGH)  Serial.println("Thermocouple High Fault");
+            if (fault & MAX31856_FAULT_TCLOW)   Serial.println("Thermocouple Low Fault");
+            if (fault & MAX31856_FAULT_OVUV)    Serial.println("Over/Under Voltage Fault");
+            if (fault & MAX31856_FAULT_OPEN)    Serial.println("Thermocouple Open Fault");
+            Serial.print(" on TC "); Serial.println(tc_low);
+        }
+        if (fault2) {
+            if (fault & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
+            if (fault & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
+            if (fault & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
+            if (fault & MAX31856_FAULT_CJLOW)   Serial.println("Cold Junction Low Fault");
+            if (fault & MAX31856_FAULT_TCHIGH)  Serial.println("Thermocouple High Fault");
+            if (fault & MAX31856_FAULT_TCLOW)   Serial.println("Thermocouple Low Fault");
+            if (fault & MAX31856_FAULT_OVUV)    Serial.println("Over/Under Voltage Fault");
+            if (fault & MAX31856_FAULT_OPEN)    Serial.println("Thermocouple Open Fault");
+            Serial.print(" on TC "); Serial.println(tc_high);
+        }
+
+        triggerOneShot(tc_low);
+        triggerOneShot(tc_high);
+        return false;
     }
 }
+
 void TcInterface::triggerOneShot(int tc){
     Adafruit_MAX31856 max = get_max_from_tc(tc);
     max.setConversionMode(MAX31856_ONESHOT_NOWAIT);
