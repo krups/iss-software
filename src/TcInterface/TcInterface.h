@@ -7,9 +7,9 @@
 // code is running on the safety processor or the 
 // main Teensy 3.5
 #if defined(ADAFRUIT_TRINKET_M0)
-  #define MOSI_PIN    4
-  #define SCK_PIN     3
-  #define MISO_PIN    2
+  #define MOSI        4
+  #define SCK         3
+  #define MISO        2
   #define CS_TC1      1
   #define CS_TC2      13
   #define SEC_CTRL_2  0
@@ -19,13 +19,19 @@
   #define MUX1        24
   #define TC1_FAULT   21
   #define TC2_FAULT   22
+  #define SPI_US SEC_CTRL_2
+  #define SPI_THEM SEC_CTRL_1
 #elif defined(__MK64FX512__) // teensy 3.5
   #define CS_TC1 20
   #define CS_TC2 21
+  #define SEC_CTRL_2  27
+  #define SEC_CTRL_1  39
   #define MUX0 16
   #define MUX1 17
   #define TC1_FAULT 25
   #define TC2_FAULT 26
+  #define SPI_US SEC_CTRL_1
+  #define SPI_THEM SEC_CTRL_2
 #else
 //#error "Unsupported TC pin config, plz fix TcInterface.h"
 #endif
@@ -46,7 +52,7 @@ class TcInterface
         );
         void enable(void);
         void disable(void);
-        void read_all(float* arr);
+        bool read_all(float* arr);
         void triggerOneShot(int tc);
         bool conversionComplete(int tc);
         float readThermocoupleTemperature(int tc);
