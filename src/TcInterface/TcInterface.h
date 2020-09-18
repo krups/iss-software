@@ -50,7 +50,7 @@ class TcInterface
             int tc1_fault = TC1_FAULT, // Fault pin for "TC1" MAX31856
             int tc2_fault = TC2_FAULT // Fault pin for "TC2" MAX31856
         );
-        void enable(void);
+        bool enable(void);
         void disable(void);
         bool read_all(float* arr);
         void triggerOneShot(int tc);
