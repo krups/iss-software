@@ -22,12 +22,12 @@ void loop() {
   // put your main code here, to run repeatedly:
   float vals[8];
 
-  tc.read_all(vals);
+  while(!tc.read_all(vals)){}
 
   for( int i=0; i<8; i++ ){
     Serial.print(vals[i]); Serial.print(", ");
-    
   }
+  
   Serial.println();
   delay(10);
 }
