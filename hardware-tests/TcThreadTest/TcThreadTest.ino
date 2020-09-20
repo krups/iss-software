@@ -34,28 +34,40 @@ void tc_thread(int inc) {
 
   Serial.println("TC thread starting");
 
+  ser_lock.lock();
   spi_lock.lock();
-  tc.enable();
+  if( tc.enable() ){
+    Serial.println("TC INIT OK");
+  } else {
+    Serial.println("TC INIT FAIL!!");
+  }
   spi_lock.unlock();
+  ser_lock.unlock();
 
   float vals[8] = {0,0,0,0,0,0,0,0};
+  unsigned long lastData = millis();
   
   while(1) {
-    float vals[8];
 
     ser_lock.lock();
     spi_lock.lock();
-    tc.read_all(vals);
+    bool forceStart = millis() - lastData > 5000 ? true : false;
+    if( forceStart ) lastData = millis();
+    bool gotData = tc.read_all(vals, forceStart);
     spi_lock.unlock();
     ser_lock.unlock();
 
-    ser_lock.lock();
-    for( int i=0; i<8; i++ ){
-      tcVals[i].data = vals[i];
-      Serial.print(vals[i]); Serial.print(", ");
+    if( gotData ){
+      lastData = millis();
+      ser_lock.lock();
+      for( int i=0; i<8; i++ ){
+        tcVals[i].data = vals[i];
+        Serial.print(vals[i]); Serial.print(", ");
+      }
+      Serial.println();
+      ser_lock.unlock();
     }
-    Serial.println();
-    ser_lock.unlock();
+    threads.delay(100);
   }
 }
 
