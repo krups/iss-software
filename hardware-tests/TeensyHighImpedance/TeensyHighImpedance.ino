@@ -19,12 +19,13 @@ void setup() {
   pinMode(MUX1, INPUT);
   pinMode(TC1_FAULT, INPUT);
   pinMode(TC2_FAULT, INPUT);
-  
+  pinMode(MOSI, INPUT);
+  pinMode(SCK, INPUT);
 }
 
 
 void loop() {
   // put your main code here, to run repeatedly:
   Serial.println("All Pin in High Z");
-  
+  delay(1000);
 }
