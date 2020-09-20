@@ -6,7 +6,7 @@
     #define TC1_FAULT 25
     #define TC2_FAULT 26
     #define SEC_CTRL1 27
-    #define SEC_CTRL2 30
+    #define SEC_CTRL2 39
     
 void setup() {
 

@@ -7,9 +7,6 @@
 // code is running on the safety processor or the 
 // main Teensy 3.5
 #if defined(ADAFRUIT_TRINKET_M0)
-  #define MOSI        4
-  #define SCK         3
-  #define MISO        2
   #define CS_TC1      1
   #define CS_TC2      13
   #define SEC_CTRL_2  0
@@ -52,10 +49,7 @@ class TcInterface
         );
         bool enable(void);
         void disable(void);
-        bool read_all(float* arr);
-        void triggerOneShot(int tc);
-        bool conversionComplete(int tc);
-        float readThermocoupleTemperature(int tc);
+        bool read_all(float* arr, bool start);
 
         // Checks if either sensor has a fault.
         // Returns a uint16_t where the high byte is the fault in TC1
@@ -71,7 +65,9 @@ class TcInterface
         //    1  |  1   | 4, 8
         void select_tc(int tc);
 
+        
     private:
+        bool enabled;
         char* tc_types;
         int cs_tc1; 
         int cs_tc2;
@@ -85,5 +81,6 @@ class TcInterface
         void set_types_from_chars(char* tc_types);
         Adafruit_MAX31856& get_max_from_tc(int tc);
 };
+
 #endif
 #endif
