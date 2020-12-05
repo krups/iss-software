@@ -31,11 +31,11 @@ void setup() {
   pinMode(TC2_FAULT, INPUT);
   
   pinMode(SEC_ACT, OUTPUT);
-  digitalWrite(SEC_ACT, LOW);
+  digitalWrite(SEC_ACT, HIGH);
 }
 
 // the loop routine runs over and over again forever:
 void loop() {
-  Serial.println("All pins but SEC_ACT in high z state");
+  Serial.println("All pins but SEC_ACT in high z state, SEC_ACT=1");
   delay(1000);
 }
