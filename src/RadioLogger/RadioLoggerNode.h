@@ -11,16 +11,16 @@ class RadioLoggerNode : public RadioLogger {
 public:
   RadioLoggerNode() : RadioLogger() {};
   
-  void log(String data) {
-    Serial.print("Sending "); Serial.print(data);
+  bool log(String data) {
+    //safePrint("Sending "); safePrintln(data);
     
     // Send a message to the DESTINATION!
     if (rf69_manager.sendtoWait((uint8_t *)data.c_str(), data.length()+1, STATION_ADDRESS)) {
-      Serial.println(" -> sent");
-      // Not expecting a reply from the server
-      
+      //safePrintln(" -> sent");
+      return true;      
     } else {
-      Serial.println("Sending failed (no ack)");
+      //safePrintln("Sending failed (no ack)");
+      return false;
     }
   };
 };

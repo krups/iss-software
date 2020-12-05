@@ -1,5 +1,8 @@
 #include "TcInterface.h"
 
+extern void safePrintln(String s);
+extern void safePrint(String s);
+
 #if defined(ADAFRUIT_TRINKET_M0) || defined(__MK64FX512__)
 
 TcInterface::TcInterface( char* tc_types,
@@ -33,13 +36,14 @@ bool TcInterface::enable(void){
         // For hardware SPI (which we are using), this calls SPIClass::begin()
         // this sets chip select, MOSI, and SCK to output. MISO is always set as input in master mode.
         if(!max1.begin() || !max2.begin()){
-            Serial.println("Could not initialize all thermocouples");
+            safePrintln("Could not initialize all thermocouples");
             disable();
             return false;
         } else {
           set_types_from_chars(tc_types);
           max1.setConversionMode(MAX31856_ONESHOT_NOWAIT);
           max2.setConversionMode(MAX31856_ONESHOT_NOWAIT);
+          safePrintln("Initialize all thermocouples");
           enabled = true;
           return true;
         }
@@ -104,7 +108,7 @@ bool TcInterface::read_all(float* arr, bool force){
                 // Before we start another round, check to see 
                 // if we need to let the other processor have control
                 if(digitalRead(SPI_THEM)){
-                  Serial.println("disabling");
+                  safePrintln("disabling");
                     disable();
                     return true;
                 }
@@ -127,7 +131,7 @@ bool TcInterface::read_all(float* arr, bool force){
         // U12 TC to Digital - connected to IC3 mux output of TC 5-8
         max2.setThermocoupleType((max31856_thermocoupletype_t) tc_type_lookup[state+4]);
 
-        Serial.print("Triggering one shots, state=");Serial.println(state);
+        //Print("TC: triggered one shots, state=");safePrintln(state);
 
         max1.triggerOneShot();
         max2.triggerOneShot();
@@ -218,7 +222,7 @@ void TcInterface::set_types_from_chars(char* tc_types){
                 break;
             default:
                 // Type is already defaulted to K by begin() function
-                Serial.println("Cannot set thermocouple type. Default is K");
+                safePrintln("Cannot set thermocouple type. Default is K");
                 break;
         } 
     }

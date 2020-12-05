@@ -25,6 +25,8 @@
 
 #define RF69_FREQ 915.0
 
+extern void safePrintln(String s);
+extern void safePrint(String s);
 
 class RadioLogger {
 public:
@@ -40,16 +42,16 @@ public:
     digitalWrite(RFM69_RST, LOW);
     delay(10);
     
-    Serial.println("initialziing");
+    safePrintln("initialziing");
     
     if (!rf69_manager.init()) {
-      Serial.println("RFM69 radio init failed");
+      safePrintln("RFM69 radio init failed");
       return false;
     }
     
-    Serial.println("Setting frequency");
+    safePrintln("Setting frequency");
     if (!rf69.setFrequency(RF69_FREQ)) {
-      Serial.println("setFrequency failed");
+      safePrintln("setFrequency failed");
       return false;
     }
     
@@ -62,9 +64,12 @@ public:
                       0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
     rf69.setEncryptionKey(key);
     
-    Serial.println("Setup done");
+    safePrintln("Setup done");
     return true;
   };
+
+  void setRetries(uint8_t re) { rf69_manager.setRetries(re); }
+  uint8_t getRetries() { return rf69_manager.retries(); }
 
   static RH_RF69 rf69;
   static RHReliableDatagram rf69_manager;
