@@ -15,10 +15,9 @@ volatile bool acc_ready = false;
 volatile acc_t acc_data;
 
 SDLogger sdlog;
-int tcLogId, imuLogId, infoLogId;
+int imuLogId, binLogId;
 
 #define ACCEL_LOG_INTERVAL_MS 250
-
 
 
 void safePrint(String s) {
@@ -34,7 +33,7 @@ void safePrintln(String s) {
 }
 
 void sd_thread(int inc) {
-  safePrintln("SD thread starting...");
+  if(USBSERIAL_DEBUG) safePrintln("SD thread starting...");
 
   sd_lock.lock();
   sdlog.begin();
@@ -43,16 +42,26 @@ void sd_thread(int inc) {
   threads.delay(100);
   
   
-  safePrint("Creating IMU logfile...");
-  
+  if(USBSERIAL_DEBUG) safePrint("Creating plaintext IMU logfile...");
   sd_lock.lock();
-  String logname = "imulog";
+  String logname = "imu";
   imuLogId = sdlog.createLog(logname);
   sd_lock.unlock();
-  
   if( imuLogId >= 0 ){
-    safePrint("success, file id = ");
-    safePrintln(imuLogId);
+    if(USBSERIAL_DEBUG) safePrint("success, file id = ");
+    if(USBSERIAL_DEBUG) safePrintln(imuLogId);
+  } else {
+    
+  }
+
+  if(USBSERIAL_DEBUG) safePrint("Creating binary IMU logfile...");
+  sd_lock.lock();
+  logname = "imubin";
+  binLogId = sdlog.createLog(logname);
+  sd_lock.unlock();
+  if( binLogId >= 0 ){
+    if(USBSERIAL_DEBUG) safePrint("success, file id = ");
+    if(USBSERIAL_DEBUG) safePrintln(binLogId);
   } else {
     
   }
@@ -69,23 +78,41 @@ void sd_thread(int inc) {
 
     // start logging if we have data
     if( rdy ){
-      safePrintln("### writing to tc file###");
+      if(USBSERIAL_DEBUG) safePrintln("### writing to tc file###");
 
       // get mutex on acc data structure and build a data string from it
       String logmsg;
+      AccPacket *p;
+      unsigned long now = millis();
       acc_lock.lock();
-      logmsg = String(millis()) + " " + String(acc_data.x) + " " + String(acc_data.y) + " " + String(acc_data.z);
+      logmsg = String(now) + " " + String(acc_data.x) + " " + String(acc_data.y) + " " + String(acc_data.z);
+      p = new AccPacket(acc_data.x, acc_data.y, acc_data.z, now);
       acc_lock.unlock();
-      
+
+      // try logging plain text
       sd_lock.lock();
       byte ret = sdlog.logMsg(imuLogId, logmsg);
       sd_lock.unlock();
       
       if( ret > 0 ){
-        safePrint("  wrote "); safePrint(ret); safePrint(" bytes to the file");
+        if(USBSERIAL_DEBUG) safePrint("  wrote "); safePrint(ret); safePrintln(" bytes to the file");
       } else {
-        safePrintln(" :( wrote 0 bytes to file");
+        if(USBSERIAL_DEBUG) safePrintln(" :( wrote 0 bytes to file");
       }
+
+      // try logging packet
+      sd_lock.lock();
+      ret = sdlog.logBin(binLogId, p);
+      sd_lock.unlock();
+
+      delete p;
+      
+      if( ret > 0 ){
+        if(USBSERIAL_DEBUG) safePrint("  wrote "); safePrint(ret); safePrintln(" bytes to the file");
+      } else {
+        if(USBSERIAL_DEBUG) safePrintln(" :( wrote 0 bytes to file");
+      }
+      
       rdy = false;
     } else {
       //safePrintln("no data ready");
@@ -123,10 +150,20 @@ void acc_thread(int inc) {
 
 void setup() {
   // put your setup code here, to run once:
-  Serial.begin(115200);
-  while(!Serial);
+  if(USBSERIAL_DEBUG){
+    Serial.begin(115200);
+    while(!Serial);
+  }
 
+  
+  safePrint("sizeof(telem_t)="); safePrintln(String(sizeof(telem_t)));
+  safePrint("sizeof(acc_t)="); safePrintln(String(sizeof(acc_t)));
+  safePrint("sizeof(acc_stat_t)="); safePrintln(String(sizeof(acc_stat_t)));
+  safePrint("sizeof(tc_t)="); safePrintln(String(sizeof(tc_t)));
+  safePrint("sizeof(telem_t)="); safePrintln(String(sizeof(telem_t)));
+  safePrint("sizeof(tcv_t)="); safePrintln(String(sizeof(tcv_t)));
 
+  
   threads.addThread(sd_thread, 1);
   threads.addThread(acc_thread, 1);
 }
