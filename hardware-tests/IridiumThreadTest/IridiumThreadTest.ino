@@ -79,6 +79,7 @@ void tc_thread(int inc) {
   spi_lock.unlock();
 
   float vals[8] = {0,0,0,0,0,0,0,0};
+  uint8_t faults[8] = {0,0,0,0,0,0,0,0}; 
   unsigned long lastData = millis();
 
   safePrintln("HERE");
@@ -88,7 +89,7 @@ void tc_thread(int inc) {
     spi_lock.lock();
     bool forceStart = millis() - lastData > 5000 ? true : false;
     if( forceStart ) lastData = millis();
-    bool gotData = tc.read_all(vals, forceStart);
+    bool gotData = tc.read_all(vals, faults, forceStart);
     spi_lock.unlock();
 
     if( gotData ){

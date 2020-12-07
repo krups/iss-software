@@ -62,7 +62,7 @@ void TcInterface::disable(void){
     enabled = false;
 }
 
-bool TcInterface::read_all(float* arr, bool force){  
+bool TcInterface::read_all(float* arr, uint8_t* faults, bool force){  
     static int state = -1;
     bool m1c = max1.conversionComplete();
     bool m2c =  max2.conversionComplete();
@@ -80,6 +80,7 @@ bool TcInterface::read_all(float* arr, bool force){
             uint8_t fault2 = max2.readFault();
 
             if (fault1) {
+                faults[state] = fault1;
                 /*if (fault1 & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
                 if (fault1 & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
                 if (fault1 & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
@@ -91,6 +92,7 @@ bool TcInterface::read_all(float* arr, bool force){
                 //Serial.print(" on TC "); Serial.println(state+1);
             }
             if (fault2) {
+                faults[state+4] = fault2;
                 /*if (fault2 & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
                 if (fault2 & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
                 if (fault2 & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");

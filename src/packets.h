@@ -146,7 +146,7 @@ public:
   }
 };
 
-//
+// Thermocouple packet class
 class TcPacket : public Packet {
 public:
   TcPacket(float* data, uint16_t time) : Packet(PTYPE_TC, TC_T_SIZE){

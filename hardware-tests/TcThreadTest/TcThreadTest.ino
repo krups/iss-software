@@ -1,3 +1,5 @@
+#include <TeensyThreads.h>
+
 /* Thermocouple thread measurement test
  *  
  * Like TcTest but with measurement in a timesliced task using TeensyThreads
@@ -28,6 +30,18 @@ struct tc_reading {
   bool valid;
 };
 
+void safePrint(String s) {
+  ser_lock.lock();
+  Serial.print(s);
+  ser_lock.unlock();
+}
+
+void safePrintln(String s) {
+  ser_lock.lock();
+  Serial.println(s);
+  ser_lock.unlock();
+}
+
 volatile tc_reading tcVals[8];
 
 void tc_thread(int inc) {
@@ -45,6 +59,7 @@ void tc_thread(int inc) {
   ser_lock.unlock();
 
   float vals[8] = {0,0,0,0,0,0,0,0};
+  uint8_t faults[8] = {0,0,0,0,0,0,0,0};
   unsigned long lastData = millis();
   
   while(1) {
@@ -53,7 +68,7 @@ void tc_thread(int inc) {
     spi_lock.lock();
     bool forceStart = millis() - lastData > 5000 ? true : false;
     if( forceStart ) lastData = millis();
-    bool gotData = tc.read_all(vals, forceStart);
+    bool gotData = tc.read_all(vals, faults, forceStart);
     spi_lock.unlock();
     ser_lock.unlock();
 

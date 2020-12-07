@@ -49,7 +49,7 @@ class TcInterface
         );
         bool enable(void);
         void disable(void);
-        bool read_all(float* arr, bool start);
+        bool read_all(float* arr, uint8_t* faults, bool start);
 
         // Checks if either sensor has a fault.
         // Returns a uint16_t where the high byte is the fault in TC1
