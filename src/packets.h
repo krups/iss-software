@@ -6,7 +6,6 @@
 * 
 */
 
-
 #ifndef PACKETS_H
 #define PACKETS_H
 
@@ -25,9 +24,6 @@ Packet types
 #define PTYPE_IMUSTATS     'I'
 // board telemetry packet
 
-
-
-
 typedef struct {
   unsigned long t;          // 4B, timestamp
   float batt;               // 4B, battery voltage
@@ -35,9 +31,6 @@ typedef struct {
   float tc2_temp;           // 4B, TC converter 2 cold junction temperature
 } telem_t;
 #define TELEM_T_SIZE    16  // just enough for data, not including struct padding
-
-
-
 
 // high g accel stats packet
 typedef struct {
@@ -52,9 +45,6 @@ typedef struct {
 } acc_stat_t;
 #define ACC_STAT_T_SIZE    20 // just enough for data, not including struct padding
 
-
-
-
 // "compact" thermocouple data packet
 // keep track of time in seconds for packet ID
 typedef struct {
@@ -62,8 +52,6 @@ typedef struct {
   uint16_t time;       // in seconds,        2 bytes
 } tc_t;
 #define TC_T_SIZE    4*TC_COUNT + 2 // just enough for data, not including struct padding
-
-
 
 // high g accel data, one x/y/z sample
 typedef struct {
@@ -73,8 +61,6 @@ typedef struct {
   uint16_t z;      // 2B
 } acc_t;           // --- 
 #define ACC_T_SIZE    10 // just enough for data, not including struct padding
-
-
 
 // "verbose" thermocouple data packet
 // not for compressing or sending, 
@@ -111,7 +97,6 @@ private:
   int _size;
 };
 
-
 /**************************
 * acc sample packet class
 */
@@ -123,6 +108,11 @@ public:
     *(uint16_t*)(&_data[7])      = y;
     *(uint16_t*)(&_data[9])      = z;
   }
+
+  unsigned long* t(){return (unsigned long*)&_data[1];}
+  uint16_t* x(){return (uint16_t*)&_data[5];}
+  uint16_t* y(){return (uint16_t*)&_data[7];}
+  uint16_t* z(){return (uint16_t*)&_data[9];}
 };
 
 // acc stats sample class
@@ -143,15 +133,28 @@ public:
     *(uint16_t*)(&_data[17]) = z_min;
     *(uint16_t*)(&_data[19]) = z_max;
   }
+  unsigned long* tmin(){return (unsigned long*)&_data[1];}
+  unsigned long* tmax(){return (unsigned long*)&_data[5];}
+  uint16_t* x_min(){return (uint16_t*)&_data[9];}
+  uint16_t* x_max(){return (uint16_t*)&_data[11];}
+  uint16_t* y_min(){return (uint16_t*)&_data[13];}
+  uint16_t* y_max(){return (uint16_t*)&_data[15];}
+  uint16_t* z_min(){return (uint16_t*)&_data[17];}
+  uint16_t* z_max(){return (uint16_t*)&_data[19];}
 };
 
 // Thermocouple packet class
 class TcPacket : public Packet {
 public:
   TcPacket(float* data, uint16_t time) : Packet(PTYPE_TC, TC_T_SIZE){
-    (float*)(&_data[1]) = data;
+    for(i = 0; i++; i < TC_COUNT){
+      (float*)(&_data[1+i]) = data[i];
+    }
     *(uint16_t*)(&_data[4*TC_COUNT]) = time;
   }
+
+  float* data(){return (float *)&_data[1];}
+  uint16_t time(){return (uint16_t*)&_data[4*TC_COUNT];}
 };
 
 // iridium packet class
