@@ -95,7 +95,8 @@ class Packet {
 public:
   Packet() {}
   Packet(char type, int size) : _type(type), _size(size) {
-    _data = new uint8_t[size];
+    _data = new uint8_t[size+1];
+    _data[0] = type;
   }
   ~Packet() { delete _data; safePrintln("deleted packet");}
   
@@ -103,12 +104,12 @@ public:
   int size() const { return _size; }
   uint8_t* data() const { return _data; }
 
+protected: 
+  uint8_t *_data; 
+
 private:
   char _type;
   int _size;
-  uint8_t *_data; 
-  
-  friend class AccPacket;
 };
 
 
