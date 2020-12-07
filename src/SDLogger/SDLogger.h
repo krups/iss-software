@@ -121,7 +121,7 @@ public:
   * for logging packets in binary format:
   * [ packet type (1 byte)     ]
   * [ packet len  (2 bytes)    ]
-  * [ packete data (len bytes) ]
+  * [ packet data (len bytes) ]
   */
   byte logBin(int id, Packet *p) {
     // bounce
@@ -143,7 +143,7 @@ public:
       // write packet data
       byte ret = _fh.write(p->data(), p->size());
       _fh.close(); //close file
-      return ret; // return the number of bytes written. TODO: make sure this is equal to the number attemped to write.
+      return ret; // return the number of bytes written. TODO: make sure this is equal to the number attempted to write.
   
     } else {
       if(USBSERIAL_DEBUG) safePrint("error: could not re-open file "); safePrint(_fnames[id]); safePrintln(" for logging");
@@ -152,6 +152,45 @@ public:
   
   }
   
+  // Take uniform sample with number of bytes = `size` from file with id=`id`
+  // Put result in sam_buf
+  void sample(int id, byte* sam_buf, unsigned long size){
+    // open file referenced by id
+    _fh = SD.open(_fnames[id].c_str(), FILE_WRITE);
+    char type_buf[1];
+    _fh.read(type_buf, 1);
+    _fh.seek(0);
+    unsigned long packet_size;
+    switch (type_buf[0])
+    {
+    case 'M':
+      packet_size = TELEM_T_SIZE;
+      break;
+    case 'A':
+      packet_size = ACC_STAT_T_SIZE;
+      break;
+    case 'T':
+      packet_size = TC_T_SIZE;
+      break;
+    case 'B':
+      packet_size = ACC_T_SIZE;
+      break;
+    case 'I':
+      //packet_size = IMU
+      break;
+    default:
+      if(USBSERIAL_DEBUG) safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");
+      return;
+      break;
+    }
+    unsigned long num_samples_needed = size/packet_size;
+    unsigned long num_packets_available = _fh.size()/packet_size;
+    unsigned long interval = num_packets_available/num_samples_needed;
+    for(int i = 0; i< num_samples_needed; i = i + interval){
+      _fh.read(sam_buf[i*packet_size], packet_size);
+    }
+
+  }
   bool isReady() { return _ready; }
 
 private:
