@@ -11,7 +11,6 @@
 #define PACKETS_H
 
 #include "config.h"
-#include <IridiumSBD.h>
 
 extern void safePrintln(String s);
 extern void safePrint(String s);
