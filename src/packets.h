@@ -49,9 +49,9 @@ typedef struct {
 // keep track of time in seconds for packet ID
 typedef struct {
   float data[TC_COUNT];  // tc measurements, 4 * TC_COUNT bytes
-  uint16_t time;       // in seconds,        2 bytes
+  unsigned long time;       // in seconds,        4 bytes
 } tc_t;
-#define TC_T_SIZE    4*TC_COUNT + 2 // just enough for data, not including struct padding
+#define TC_T_SIZE    4*TC_COUNT + 4 // just enough for data, not including struct padding
 
 // high g accel data, one x/y/z sample
 typedef struct {
@@ -147,14 +147,14 @@ public:
 class TcPacket : public Packet {
 public:
   TcPacket(float* data, uint16_t time) : Packet(PTYPE_TC, TC_T_SIZE){
-    for(i = 0; i++; i < TC_COUNT){
-      (float*)(&_data[1+i]) = data[i];
+    for(int i = 0; i < TC_COUNT; i++){
+      *(float*)(&_data[1+i]) = data[i];
     }
-    *(uint16_t*)(&_data[4*TC_COUNT]) = time;
+    *(unsigned long*)(&_data[4*TC_COUNT]) = time;
   }
 
   float* data(){return (float *)&_data[1];}
-  uint16_t time(){return (uint16_t*)&_data[4*TC_COUNT];}
+  unsigned long* time(){return (unsigned long*)&_data[4*TC_COUNT];}
 };
 
 // iridium packet class
