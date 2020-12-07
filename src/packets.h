@@ -119,10 +119,10 @@ private:
 class AccPacket : public Packet {
 public:
   AccPacket(uint16_t x, uint16_t y, uint16_t z, unsigned long t) : Packet( PTYPE_ACCELSINGLE, ACC_T_SIZE ) {
-    *(unsigned long*)(&_data[0]) = t;
-    *(uint16_t*)(&_data[4])      = x;
-    *(uint16_t*)(&_data[6])      = y;
-    *(uint16_t*)(&_data[8])      = z;
+    *(unsigned long*)(&_data[1]) = t;
+    *(uint16_t*)(&_data[5])      = x;
+    *(uint16_t*)(&_data[7])      = y;
+    *(uint16_t*)(&_data[9])      = z;
   }
 };
 
