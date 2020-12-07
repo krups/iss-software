@@ -126,6 +126,26 @@ public:
   }
 };
 
+// acc stats sample class
+class AccStatsPacket : public Packet {
+public:
+  AccStatsPacket(
+      unsigned long tmin, unsigned long tmax,
+      uint16_t x_min, uint16_t x_max,
+      uint16_t y_min, uint16_t y_max,
+      uint16_t z_min, uint16_t z_max) : 
+      Packet(PTYPE_ACCELSTATS, ACC_STAT_T_SIZE){
+      *(unsigned long*)(&_data[1]) = tmin;
+      *(unsigned long*)(&_data[5]) = tmax;
+      *(uint16_t*)(&_data[9]) = x_min;
+      *(uint16_t*)(&_data[11]) = x_max;
+      *(uint16_t*)(&_data[13]) = y_min;
+      *(uint16_t*)(&_data[15]) = y_max;
+      *(uint16_t*)(&_data[17]) = z_min;
+      *(uint16_t*)(&_data[19]) = z_max;
+  }
+};
+
 // iridium packet class
 class IridiumPacket {
 public:
