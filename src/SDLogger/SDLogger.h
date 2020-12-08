@@ -50,7 +50,7 @@ public:
     
     // read in last log id from memory , sizeof(int)
     EEPROM.get(0, _logNum);
-    EEPROM.update(0, _logNum+1);
+    EEPROM.update(0, (_logNum+1) % 100);
 
     if(USBSERIAL_DEBUG) safePrint("-----> log # "); safePrintln(_logNum);
   }
@@ -73,7 +73,11 @@ public:
     
     // create filename and try to open file
     String fname;
-    fname += (logtag + String(_logNum) + ".txt");
+    fname += (logtag + String(_logNum));
+    if( fname.length() > 8 ){
+      safePrint("need shorter name");
+    }
+    fname +=".dat";
 
     if(USBSERIAL_DEBUG) safePrint("filename is '");safePrint(fname);safePrintln("'");
     
@@ -140,8 +144,10 @@ public:
       // seek to end of file
       _fh.seek(_fh.size());
       
-      // write packet data
-      byte ret = _fh.write(p->data(), p->size());
+      // write packet data, including type char
+      uint8_t b = p->type();
+      byte ret = _fh.write(&b, 1);
+      ret += _fh.write(p->data(), p->size());
       _fh.close(); //close file
       return ret; // return the number of bytes written. TODO: make sure this is equal to the number attempted to write.
   
@@ -156,7 +162,12 @@ public:
   // Put result in sam_buf
   void sample(int id, byte* sam_buf, unsigned long size){
     // open file referenced by id
-    _fh = SD.open(_fnames[id].c_str(), FILE_WRITE);
+    _fh = SD.open(_fnames[id].c_str(), FILE_READ);
+    if( !_fh ) {
+      safePrintln("error opening file");
+      return;
+    }
+    safePrint("wanting "); safePrint(size); safePrintln("bytes");
     char type_buf[1];
     _fh.read(type_buf, 1);
     _fh.seek(0);
@@ -183,12 +194,27 @@ public:
       return;
       break;
     }
-    unsigned long num_samples_needed = size/packet_size;
+    packet_size += 1; // for packet ID char
+    
+    safePrint("packet size is "); safePrint(packet_size); safePrintln(" bytes");
+    
+    unsigned long num_samples_needed = size/(packet_size - 1);
     unsigned long num_packets_available = _fh.size()/packet_size;
     unsigned long interval = num_packets_available/num_samples_needed;
-    for(int i = 0; i< num_samples_needed; i = i + interval){
-      _fh.read(sam_buf[i*packet_size], packet_size);
+    
+    safePrint("num_samples_needed:    "); safePrintln(num_samples_needed);
+    safePrint("num_packets_available: "); safePrintln(num_packets_available);
+    safePrint("interval:              "); safePrintln(interval);
+    
+    for( int i = 0; i < num_samples_needed; i++ ){
+      int loc = i*packet_size*interval;
+      safePrint("  seeking to "); safePrintln(loc+1);
+      _fh.seek(loc+1);
+      safePrint("and reading "); safePrint(packet_size-1); safePrintln("bytes");
+      _fh.read(&sam_buf[i*(packet_size-1)], packet_size-1);
     }
+    
+    _fh.close();
 
   }
   bool isReady() { return _ready; }

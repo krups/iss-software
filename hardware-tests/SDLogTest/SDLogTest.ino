@@ -10,13 +10,20 @@
 Threads::Mutex sd_lock;
 Threads::Mutex ser_lock; // for courteous debug printing
 Threads::Mutex acc_lock; // for accessing accel data between acc_thread and sd_thread
+Threads::Mutex tc_lock;
 
 volatile bool acc_ready = false;
 volatile acc_t acc_data;
 
-SDLogger sdlog;
-int imuLogId, binLogId;
+volatile bool tc_ready = false;
+volatile tc_t tc_data;
 
+volatile bool sampleRequest = false;
+
+SDLogger sdlog;
+int accBinLogId, tcBinLogId;
+
+#define TC_LOG_INTERVAL_MS    1000
 #define ACCEL_LOG_INTERVAL_MS 250
 
 
@@ -35,41 +42,43 @@ void safePrintln(String s) {
 void sd_thread(int inc) {
   if(USBSERIAL_DEBUG) safePrintln("SD thread starting...");
 
-  sd_lock.lock();
+  while( !sd_lock.lock() );
   sdlog.begin();
   sd_lock.unlock();
   
   threads.delay(100);
   
   
-  if(USBSERIAL_DEBUG) safePrint("Creating plaintext IMU logfile...");
-  sd_lock.lock();
-  String logname = "imu";
-  imuLogId = sdlog.createLog(logname);
+  if(USBSERIAL_DEBUG) safePrint("Creating logfile for accelerometer data...");
+  while( !sd_lock.lock() );
+  String logname = "acc";
+  accBinLogId = sdlog.createLog(logname);
   sd_lock.unlock();
-  if( imuLogId >= 0 ){
-    if(USBSERIAL_DEBUG) safePrint("success, file id = ");
-    if(USBSERIAL_DEBUG) safePrintln(imuLogId);
+  if( accBinLogId >= 0 ){
+    if(USBSERIAL_DEBUG) safePrint("ok, file id = ");
+    if(USBSERIAL_DEBUG) safePrintln(accBinLogId);
   } else {
-    
+    if(USBSERIAL_DEBUG) safePrintln("fail");
   }
 
-  if(USBSERIAL_DEBUG) safePrint("Creating binary IMU logfile...");
-  sd_lock.lock();
-  logname = "imubin";
-  binLogId = sdlog.createLog(logname);
+  if(USBSERIAL_DEBUG) safePrint("Creating logfile for thermocouple data...");
+  while( !sd_lock.lock() );
+  logname = "tc";
+  tcBinLogId = sdlog.createLog(logname);
   sd_lock.unlock();
-  if( binLogId >= 0 ){
+  if( tcBinLogId >= 0 ){
     if(USBSERIAL_DEBUG) safePrint("success, file id = ");
-    if(USBSERIAL_DEBUG) safePrintln(binLogId);
+    if(USBSERIAL_DEBUG) safePrintln(tcBinLogId);
   } else {
-    
+    if(USBSERIAL_DEBUG) safePrintln("fail");
   }
+
+  bool once = true;
 
   while( 1 ){
     // check for accel data to log, w muttex
     bool rdy = false;
-    acc_lock.lock();
+    while( !acc_lock.lock() );
     if( acc_ready ){
       rdy = true;
       acc_ready = false;
@@ -78,57 +87,97 @@ void sd_thread(int inc) {
 
     // start logging if we have data
     if( rdy ){
-      if(USBSERIAL_DEBUG) safePrintln("### writing to tc file###");
+      if(USBSERIAL_DEBUG) safePrint("* writing acc data");
 
-      // get mutex on acc data structure and build a data string from it
-      String logmsg;
-      AccPacket *p;
+      // get mutex on acc data structure and build a packet from it
       unsigned long now = millis();
-      acc_lock.lock();
-      logmsg = String(now) + " " + String(acc_data.x) + " " + String(acc_data.y) + " " + String(acc_data.z);
-      p = new AccPacket(acc_data.x, acc_data.y, acc_data.z, now);
+      while( !acc_lock.lock() );
+      AccPacket p(acc_data.x, acc_data.y, acc_data.z, now);
       acc_lock.unlock();
 
-      // try logging plain text
-      sd_lock.lock();
-      byte ret = sdlog.logMsg(imuLogId, logmsg);
-      sd_lock.unlock();
-      
-      if( ret > 0 ){
-        if(USBSERIAL_DEBUG) safePrint("  wrote "); safePrint(ret); safePrintln(" bytes to the file");
-      } else {
-        if(USBSERIAL_DEBUG) safePrintln(" :( wrote 0 bytes to file");
-      }
-
       // try logging packet
-      sd_lock.lock();
-      ret = sdlog.logBin(binLogId, p);
+      while( !sd_lock.lock() );
+      byte ret = sdlog.logBin(accBinLogId, &p);
       sd_lock.unlock();
-
-      delete p;
       
       if( ret > 0 ){
-        if(USBSERIAL_DEBUG) safePrint("  wrote "); safePrint(ret); safePrintln(" bytes to the file");
+        if(USBSERIAL_DEBUG) safePrintln("ok");
       } else {
-        if(USBSERIAL_DEBUG) safePrintln(" :( wrote 0 bytes to file");
+        if(USBSERIAL_DEBUG) safePrintln("fail");
       }
       
       rdy = false;
-    } else {
-      //safePrintln("no data ready");
+    } 
+
+    while( !tc_lock.lock() );
+    if( tc_ready ){
+      rdy = true;
+      tc_ready = false;
+    }
+    tc_lock.unlock();
+    
+    if( rdy ){
+      if(USBSERIAL_DEBUG) safePrint("* writing to TC file...");
+
+      // get tc data
+      while( !tc_lock.lock() );
+      TcPacket p(tc_data.data, millis());
+      tc_lock.unlock();
+
+      // try to log to binary file
+      while( !sd_lock.lock() );
+      byte ret = sdlog.logBin(tcBinLogId, &p);
+      sd_lock.unlock();
+
+      if( ret > 0 ){
+        if(USBSERIAL_DEBUG) safePrintln("ok");
+      } else {
+        if(USBSERIAL_DEBUG) safePrintln("fail");
+      }
+      
+      rdy = false;
+    }
+
+    if( once && millis() > 30000 ){
+      safePrintln("#####################################\n###########################\nsampling acc log############################3");
+      unsigned long sz = 10*((int)TC_T_SIZE);
+      safePrint("TC_T_SIZE = "); safePrintln(TC_T_SIZE);
+      safePrint("sz = "); safePrintln(sz);
+      uint8_t buf[sz];
+      while( !sd_lock.lock() );
+      sdlog.sample(tcBinLogId, buf, sz);
+      sd_lock.unlock();
+      once = false;
+    }
+    
+    threads.yield();
+  }
+}
+
+void tc_thread(int inc) {
+  unsigned long lastRead = 0;
+
+  safePrintln("TC thread starting..");
+  
+  while( 1 ) {
+    unsigned long now = millis();
+    if( now - lastRead > TC_LOG_INTERVAL_MS ){
+      while( !tc_lock.lock() );
+      tc_data.data[0] = (float)analogRead(A3);
+      tc_data.data[1] = (float)analogRead(A4);
+      tc_data.data[2] = (float)analogRead(A5);
+      tc_data.data[3] = (float)analogRead(A6);
+      if( TC_COUNT > 4)
+        tc_data.data[4] = (float)analogRead(A7);
+      tc_ready = true;
+      tc_lock.unlock();
+      lastRead = now;
     }
     threads.yield();
   }
 }
 
 void acc_thread(int inc) {
-  // replace with actual accel analog input pins
-  analogReadResolution(12); // 0-4095
-  analogReadAveraging(64);  // average 64 samples
-  pinMode(A0, INPUT);
-  pinMode(A1, INPUT);
-  pinMode(A2, INPUT);
-
   unsigned long lastRead = 0;
 
   safePrintln("accel thread starting..");
@@ -155,6 +204,17 @@ void setup() {
     while(!Serial);
   }
 
+  analogReadResolution(12); // 0-4095
+  analogReadAveraging(64);  // average 64 samples
+  pinMode(A0, INPUT);
+  pinMode(A1, INPUT);
+  pinMode(A2, INPUT);
+  pinMode(A3, INPUT);
+  pinMode(A4, INPUT);
+  pinMode(A5, INPUT);
+  pinMode(A6, INPUT);
+  pinMode(A7, INPUT);
+
   
   safePrint("sizeof(telem_t)="); safePrintln(String(sizeof(telem_t)));
   safePrint("sizeof(acc_t)="); safePrintln(String(sizeof(acc_t)));
@@ -166,6 +226,7 @@ void setup() {
   
   threads.addThread(sd_thread, 1);
   threads.addThread(acc_thread, 1);
+  threads.addThread(tc_thread, 1);
 }
 
 int count = 0;

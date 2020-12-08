@@ -9,10 +9,12 @@
 // radio logger node class needs this defined
 #define NODE_ADDRESS 2
 
-#include <IridiumSBD.h>
-#include <TeensyThreads.h>
+#include "src/packets.h"
 #include "src/TcInterface/TcInterface.h"
 #include "src/RadioLogger/RadioLoggerNode.h"
+#include <IridiumSBD.h>
+#include <TeensyThreads.h>
+
 
 #define LED_IR_ON    3
 #define LED_IR_SIG   4
@@ -26,17 +28,13 @@ RadioLoggerNode logNode;
 char types[8] = "KKKKKKKK";
 TcInterface tc(types);
 
+Threads::Mutex millis_lock;
 Threads::Mutex spi_lock;
 Threads::Mutex ser_lock;
 Threads::Mutex ircmd_lock;
+Threads::Mutex tcdata_lock;
 
-struct tc_reading {
-  float data;
-  bool valid;
-};
-
-volatile tc_reading tcVals[8];
-
+volatile tc_t tcdata;
 
 ////////////////////////////////////
 //           IRIDIUM VARS
@@ -53,9 +51,16 @@ int ircmd = 0;
 // #define IR_SEND_PACKET etc. 
 uint8_t signalBrightness[6] = {0, 2, 10, 50, 100, 250};
 
+unsigned long safeMillis() {
+  unsigned long m = 0;
+  millis_lock.lock(5);
+  m = millis();
+  millis_lock.unlock();
+  return m;
+}
 
 void safePrint(String s) {
-  ser_lock.lock();
+  ser_lock.lock(10);
   Serial.print(s);
   ser_lock.unlock();
 }
@@ -66,11 +71,14 @@ void safePrintln(String s) {
   ser_lock.unlock();
 }
 
+
+// simple thermocouple reading thread keeps conversions happening as fast as possible
+// and updates a shared struct with new data
 void tc_thread(int inc) {
 
   safePrintln("TC thread starting");
 
-  spi_lock.lock();
+  while( !spi_lock.lock() );
   if( tc.enable() ){
     safePrintln("TC INIT OK");
   } else {
@@ -80,27 +88,32 @@ void tc_thread(int inc) {
 
   float vals[8] = {0,0,0,0,0,0,0,0};
   uint8_t faults[8] = {0,0,0,0,0,0,0,0}; 
-  unsigned long lastData = millis();
+  unsigned long lastData = safeMillis();
 
   safePrintln("HERE");
   
   while(1) {
 
-    spi_lock.lock();
-    bool forceStart = millis() - lastData > 5000 ? true : false;
-    if( forceStart ) lastData = millis();
+    while( !spi_lock.lock() );
+    bool forceStart = safeMillis() - lastData > 5000 ? true : false;
+    if( forceStart ) lastData = safeMillis();
     bool gotData = tc.read_all(vals, faults, forceStart);
     spi_lock.unlock();
 
     if( gotData ){
       digitalWrite(LED_ACT, HIGH);
-      
-      lastData = millis();
-      for( int i=0; i<8; i++ ){
-        tcVals[i].data = vals[i];
-        safePrint(vals[i]); safePrint(", ");
+
+      unsigned long nn = safeMillis();  
+
+      while( !tcdata_lock.lock() );
+      for( int i=0; i<TC_COUNT; i++ ){
+        tcdata.data[i] = vals[i];
       }
-      safePrint("\r\n");
+      tcdata.time = nn;
+      tcdata_lock.unlock();
+      
+
+      lastData = nn;
       digitalWrite(LED_ACT, LOW);
     } else {
       
@@ -109,9 +122,12 @@ void tc_thread(int inc) {
   }
 }
 
+
+// simple radio thread takes thermocouple data every 5 seconds, builds a packet
+// and debugs the packet over ism radio
 void radio_thread(int inc) {
   
-  spi_lock.lock();
+  while ( !spi_lock.lock() );
   if( logNode.begin() ){
     safePrintln("log node started");
     analogWrite(LED_ISM_TX, 5);
@@ -123,16 +139,17 @@ void radio_thread(int inc) {
 
   while(1) {
     threads.delay(5000);
-    String data;
-    for( int i=0; i<8; i++ ){
-      data += " ";
-      data += tcVals[i].data;
-    } data += "\n";
-    
-    spi_lock.lock();
+
+    // copy shared data into local vars
+    while( !tcdata_lock.lock() );
+    TcPacket *p = new TcPacket(tcdata.data, tcdata.time);
+    tcdata_lock.unlock();
+
+    // get SPI mutex and send packet over radio
+    while ( !spi_lock.lock() );
     analogWrite(LED_ISM_TX, 100);
-    safePrintln("about to log");
-    logNode.log(data);
+    safePrintln("about to send ism packet");
+    logNode.log(p);
     analogWrite(LED_ISM_TX, 5);
     spi_lock.unlock();
   }
@@ -182,9 +199,9 @@ void iridium_thread(int inc) {
   safePrintln(".");
 
   int cmd = 0;
-
+  unsigned long curMillis = 0;
   unsigned long signalCheckInterval = 15000;
-  unsigned long lastSignalCheck = millis();
+  unsigned long lastSignalCheck = safeMillis();
   
   while(1) {
     threads.delay(50);
@@ -228,22 +245,23 @@ void iridium_thread(int inc) {
     ///////////////////
     // CHECK THE SINGL QUALITY PERIODICALLY
     ////////////////////
-    if( lastSignalCheck - millis() > signalCheckInterval ){
-     irerr = modem.getSignalQuality(signalQuality);
-      if (irerr != ISBD_SUCCESS)
-      {
+    curMillis = safeMillis();
+    if( curMillis - lastSignalCheck > signalCheckInterval ){
+      irerr = modem.getSignalQuality(signalQuality);
+      if (irerr != ISBD_SUCCESS) {
         safePrint("SignalQuality failed: error ");
         safePrintln(irerr);
         //TODO: error handling
         //return;
+      } else {
+        safePrint("On a scale of 0 to 5, signal quality is currently ");
+        safePrint(signalQuality);
+        safePrintln(".");
+        if( signalQuality >= 0 && signalQuality <= 5 ){
+          analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
+        }
       }
-      safePrint("On a scale of 0 to 5, signal quality is currently ");
-      safePrint(signalQuality);
-      safePrintln(".");
-      if( signalQuality >= 0 && signalQuality <= 5 ){
-        analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
-      }
-      lastSignalCheck = millis();
+      lastSignalCheck = curMillis;
     }
     
   }

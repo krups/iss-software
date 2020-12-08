@@ -51,7 +51,7 @@ typedef struct {
   float data[TC_COUNT];  // tc measurements, 4 * TC_COUNT bytes
   unsigned long time;       // in seconds,        4 bytes
 } tc_t;
-#define TC_T_SIZE    4*TC_COUNT + 4 // just enough for data, not including struct padding
+#define TC_T_SIZE    (4*TC_COUNT) + 4 // just enough for data, not including struct padding
 
 // high g accel data, one x/y/z sample
 typedef struct {
@@ -80,8 +80,7 @@ class Packet {
 public:
   Packet() {}
   Packet(char type, int size) : _type(type), _size(size) {
-    _data = new uint8_t[size+1];
-    _data[0] = type;
+    _data = new uint8_t[size];
   }
   ~Packet() { delete _data; safePrintln("deleted packet");}
   
@@ -91,10 +90,29 @@ public:
 
 protected: 
   uint8_t *_data; 
-
-private:
   char _type;
   int _size;
+};
+
+/*************************
+* telemetry packet class
+*/
+class TelemPacket : public Packet {
+public:
+  TelemPacket(uint8_t *buf) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
+    memcpy(_data, buf, _size);
+  }
+  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
+    *(unsigned long*)(&_data[0]) = t;
+    *(float*)(&_data[4])         = batt;
+    *(float*)(&_data[8])         = tc1_temp;
+    *(float*)(&_data[12])        = tc2_temp;
+  }
+  
+  unsigned long t(){return *((unsigned long*)&_data[0]);}
+  float batt(){return *((float*)&_data[4]);}
+  float tc1_temp(){return *((float*)&_data[8]);}
+  float tc2_temp(){return *((float*)&_data[12]);}
 };
 
 /**************************
@@ -102,59 +120,72 @@ private:
 */
 class AccPacket : public Packet {
 public:
+  AccPacket(uint8_t *buf) : Packet( PTYPE_ACCELSINGLE, ACC_T_SIZE ) {
+    memcpy(_data, buf, _size);
+  }
+  
   AccPacket(uint16_t x, uint16_t y, uint16_t z, unsigned long t) : Packet( PTYPE_ACCELSINGLE, ACC_T_SIZE ) {
-    *(unsigned long*)(&_data[1]) = t;
-    *(uint16_t*)(&_data[5])      = x;
-    *(uint16_t*)(&_data[7])      = y;
-    *(uint16_t*)(&_data[9])      = z;
+    *(unsigned long*)(&_data[0]) = t;
+    *(uint16_t*)(&_data[4])      = x;
+    *(uint16_t*)(&_data[6])      = y;
+    *(uint16_t*)(&_data[8])      = z;
   }
 
-  unsigned long* t(){return (unsigned long*)&_data[1];}
-  uint16_t* x(){return (uint16_t*)&_data[5];}
-  uint16_t* y(){return (uint16_t*)&_data[7];}
-  uint16_t* z(){return (uint16_t*)&_data[9];}
+  unsigned long t(){return *((unsigned long*)&_data[0]);}
+  uint16_t x(){return *((uint16_t*)&_data[4]);}
+  uint16_t y(){return *((uint16_t*)&_data[6]);}
+  uint16_t z(){return *((uint16_t*)&_data[8]);}
 };
 
 // acc stats sample class
 class AccStatsPacket : public Packet {
 public:
+  AccStatsPacket( uint8_t *buf ) : Packet(PTYPE_ACCELSTATS, ACC_STAT_T_SIZE){
+    memcpy(_data, buf, _size);
+  }
+  
   AccStatsPacket(
       unsigned long tmin, unsigned long tmax,
       uint16_t x_min, uint16_t x_max,
       uint16_t y_min, uint16_t y_max,
       uint16_t z_min, uint16_t z_max) : 
       Packet(PTYPE_ACCELSTATS, ACC_STAT_T_SIZE){
-    *(unsigned long*)(&_data[1]) = tmin;
-    *(unsigned long*)(&_data[5]) = tmax;
-    *(uint16_t*)(&_data[9]) = x_min;
-    *(uint16_t*)(&_data[11]) = x_max;
-    *(uint16_t*)(&_data[13]) = y_min;
-    *(uint16_t*)(&_data[15]) = y_max;
-    *(uint16_t*)(&_data[17]) = z_min;
-    *(uint16_t*)(&_data[19]) = z_max;
+    *(unsigned long*)(&_data[0]) = tmin;
+    *(unsigned long*)(&_data[4]) = tmax;
+    *(uint16_t*)(&_data[8]) = x_min;
+    *(uint16_t*)(&_data[10]) = x_max;
+    *(uint16_t*)(&_data[12]) = y_min;
+    *(uint16_t*)(&_data[14]) = y_max;
+    *(uint16_t*)(&_data[16]) = z_min;
+    *(uint16_t*)(&_data[18]) = z_max;
   }
-  unsigned long* tmin(){return (unsigned long*)&_data[1];}
-  unsigned long* tmax(){return (unsigned long*)&_data[5];}
-  uint16_t* x_min(){return (uint16_t*)&_data[9];}
-  uint16_t* x_max(){return (uint16_t*)&_data[11];}
-  uint16_t* y_min(){return (uint16_t*)&_data[13];}
-  uint16_t* y_max(){return (uint16_t*)&_data[15];}
-  uint16_t* z_min(){return (uint16_t*)&_data[17];}
-  uint16_t* z_max(){return (uint16_t*)&_data[19];}
+  unsigned long tmin(){return *((unsigned long*)&_data[0]);}
+  unsigned long tmax(){return *((unsigned long*)&_data[4]);}
+  uint16_t x_min(){return *((uint16_t*)&_data[8]);}
+  uint16_t x_max(){return *((uint16_t*)&_data[10]);}
+  uint16_t y_min(){return *((uint16_t*)&_data[12]);}
+  uint16_t y_max(){return *((uint16_t*)&_data[14]);}
+  uint16_t z_min(){return *((uint16_t*)&_data[16]);}
+  uint16_t z_max(){return *((uint16_t*)&_data[18]);}
 };
 
 // Thermocouple packet class
 class TcPacket : public Packet {
 public:
-  TcPacket(float* data, uint16_t time) : Packet(PTYPE_TC, TC_T_SIZE){
+  TcPacket(uint8_t *buf) : Packet(PTYPE_TC, TC_T_SIZE){
+    memcpy(_data, buf, _size);
+  }
+  
+  TcPacket(float* data, unsigned long time) : Packet(PTYPE_TC, TC_T_SIZE){
     for(int i = 0; i < TC_COUNT; i++){
-      *(float*)(&_data[1+i]) = data[i];
+      ((float*)_data)[i] = data[i];
+      safePrintln(String(((float*)_data)[i]));
     }
     *(unsigned long*)(&_data[4*TC_COUNT]) = time;
   }
 
-  float* data(){return (float *)&_data[1];}
-  unsigned long* time(){return (unsigned long*)&_data[4*TC_COUNT];}
+  float* data(){ return (float *)_data; }
+  unsigned long time(){return *((unsigned long*)&_data[4*TC_COUNT]);}
 };
 
 // iridium packet class
