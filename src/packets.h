@@ -85,6 +85,7 @@ public:
   ~Packet() { delete _data; safePrintln("deleted packet");}
   
   virtual String toString () {};
+  virtual String toString (bool timestamp) {};
   char type() const { return _type; }
   int size() const { return _size; }
   uint8_t* data() const { return _data; }
@@ -109,6 +110,8 @@ public:
     *(float*)(&_data[8])         = tc1_temp;
     *(float*)(&_data[12])        = tc2_temp;
   }
+  
+  String toString() { return toString(false); }
   
   String toString(bool with_timestamp) {
     String a;
@@ -141,6 +144,8 @@ public:
     *(uint16_t*)(&_data[6])      = y;
     *(uint16_t*)(&_data[8])      = z;
   }
+
+  String toString() { return toString(false); }
 
   String toString(bool with_timestamp) {
     String a;
@@ -180,6 +185,8 @@ public:
     *(uint16_t*)(&_data[18]) = z_max;
   }
   
+  String toString() { return toString(false); }
+  
   String toString(bool with_timestamp) {
     String a;
     if( with_timestamp ){
@@ -215,6 +222,7 @@ public:
     *(unsigned long*)(&_data[4*TC_COUNT]) = time;
   }
 
+  String toString() { return toString(false); }
   
   String toString(bool with_timestamp) {
     String a;

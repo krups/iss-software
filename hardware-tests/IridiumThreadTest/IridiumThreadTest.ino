@@ -105,11 +105,13 @@ void tc_thread(int inc) {
 
       unsigned long nn = safeMillis();  
 
-      while( !tcdata_lock.lock() );
-      for( int i=0; i<TC_COUNT; i++ ){
-        tcdata.data[i] = vals[i];
+      tcdata_lock.lock(1000);
+      if( tcdata_lock.getState() ){
+        for( int i=0; i<TC_COUNT; i++ ){
+          tcdata.data[i] = vals[i];
+        }
+        tcdata.time = nn;
       }
-      tcdata.time = nn;
       tcdata_lock.unlock();
       
 
@@ -131,7 +133,7 @@ void radio_thread(int inc) {
   if( logNode.begin() ){
     safePrintln("log node started");
     analogWrite(LED_ISM_TX, 5);
-    logNode.setRetries(0);
+    logNode.setRetries(2);
   } else {
     safePrintln("log node failed to start");
   }
@@ -147,11 +149,13 @@ void radio_thread(int inc) {
 
     // get SPI mutex and send packet over radio
     safePrintln("* about to send ism packet");
-    while ( !spi_lock.lock() );
-    analogWrite(LED_ISM_TX, 100);
-    logNode.log(p);
-    analogWrite(LED_ISM_TX, 5);
-    spi_lock.unlock();
+    spi_lock.lock(1000);
+    if( spi_lock.getState() ){
+      analogWrite(LED_ISM_TX, 100);
+      logNode.log(p);
+      analogWrite(LED_ISM_TX, 5);
+      spi_lock.unlock();
+    }
 
     delete p;
   }
@@ -209,13 +213,15 @@ void iridium_thread(int inc) {
     threads.delay(50);
 
     // check for a command set in the command variable
-    ircmd_lock.lock();
-    if( ircmd != 0){
-      cmd = ircmd;
-      ircmd = 0;
+    ircmd_lock.lock(50);
+    if(ircmd_lock.getState()){
+      if( ircmd != 0){
+        cmd = ircmd;
+        ircmd = 0;
+      }
+      ircmd_lock.unlock();
     }
-    ircmd_lock.unlock();
-
+    
     /////////////////////
     // PROCESS TEST SEND COMMAND
     /////////////////////

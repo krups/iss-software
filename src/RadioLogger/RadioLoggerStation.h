@@ -20,7 +20,11 @@ public:
       if (rf69_manager.recvfromAck(buf, &len, &from)) {
         Serial.print("got "); Serial.print(len); Serial.println(" bytes");
         Serial.print("last byte is: "); Serial.println(buf[len-1], HEX);
-        buf[len] = 0; // zero out remaining string
+        
+        
+        //buf[len] = 0; // zero out remaining string
+        
+        
         lastPacketFrom = from;
         lastRSSI = rf69.lastRssi();
         //Serial.write((char*)buf);
@@ -28,6 +32,10 @@ public:
         buflen = len;
     
         decodePackets(len);
+        
+        printPackets();
+        
+        deletePackets();
       }     
       
       return true;
@@ -37,9 +45,9 @@ public:
   };
 private:
 
-  bool decodePackets(uint8_t len) {    
+  void decodePackets(uint8_t len) {    
     // detect number of packets containted in buffer
-    uint8_t num_packets = 0;
+    int num_packets = 0;
     
     for( int i=0; i<len; i++ ){
       switch(buf[i]){
@@ -71,10 +79,10 @@ private:
     
     
     // now build packets
-    int pcount = 0;   // current count of instantiated packets
+    pcount = 0;   // current count of instantiated packets
     uint8_t idx = 0;  // current position within buffer
     
-    while( idx < len-1 ){  
+    while( pcount < num_packets ){  
       
       Serial.print("idx=");
       Serial.println(idx);
@@ -83,7 +91,7 @@ private:
       
       //
       if( buf[idx] == PTYPE_TELEM ){
-        Serial.print("got TELEM packet");
+        Serial.println("got TELEM packet");
         pbuf[pcount] = new AccPacket(&buf[idx+1]);
         pcount++;
         idx += TELEM_T_SIZE+1;
@@ -91,37 +99,38 @@ private:
       
       // min/max stats over a period of time from the high g accelerometer
       else if( buf[idx] == PTYPE_ACCELSTATS ){
-        Serial.print("got ACEL_STATS packet");
+        Serial.println("got ACEL_STATS packet");
         pbuf[pcount] = new AccStatsPacket(&buf[idx+1]);
         pcount++;
-        idx += ACC_STAT_T_SIZE;
+        idx += ACC_STAT_T_SIZE+1;
       } 
       
       // timestamped thermocouple packet (containing TC_COUNT readings)
       else if( buf[idx] == PTYPE_TC ){
-        Serial.print("got TC packet");
-        pbuf[pcount] = new TcPacket(&buf[idx]);
+        Serial.println("got TC packet");
+        pbuf[pcount] = new TcPacket(&buf[idx+1]);
         pcount++;
-        idx += TC_T_SIZE;
+        idx += TC_T_SIZE+1;
+        continue;
       } 
       
       // singe timestamped high g accelerometer reading
       else if( buf[idx] == PTYPE_ACCELSINGLE ){
         Serial.println("got ACCEL packet");
-        pbuf[pcount] = new AccPacket(&buf[idx]);
-        Serial.println( ((AccPacket*)pbuf[pcount])->t() ); Serial.print("\t"); 
-        Serial.println( ((AccPacket*)pbuf[pcount])->x() ); Serial.print("\t");
-        Serial.println( ((AccPacket*)pbuf[pcount])->y() ); Serial.print("\t");
-        Serial.println( ((AccPacket*)pbuf[pcount])->z() ); Serial.println("");
+        pbuf[pcount] = new AccPacket(&buf[idx+1]);
         pcount++;
-        idx += ACC_T_SIZE;
+        idx += ACC_T_SIZE+1;
       } 
       
       // unrecognized packet     
       else {
         Serial.println(" OUT OF WACHK ON THE PACKET DECODE, discarding entire buffer (for now)");
-        idx = len; // stop processing
+        break;
       }
+    }
+    
+    if( pcount == num_packets ){
+      Serial.println(" --> parsed all packets");
     }
     
   }
@@ -132,6 +141,13 @@ private:
       Serial.println(pbuf[i]->toString());
     }
     Serial.println("done");
+  }
+  
+  void deletePackets() {
+    for( int i=0; i<pcount; i++ ){
+      delete pbuf[i];
+    }
+    pcount = 0;
   }
   
   int pcount;

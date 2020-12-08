@@ -31,14 +31,17 @@ public:
     // if the packet will fit in the send buffer
     buflen = 0;
     buf[0] = p->type(); // so the receiver knows what to expect 
+    
     memcpy( &buf[1], p->data(), p->size() );
     buflen = p->size() + 1;
     
-    if (rf69_manager.sendtoWait(buf, buflen, STATION_ADDRESS)) {
-      //safePrintln(" -> sent");
+    safePrintln("about to send");
+    
+    if (rf69_manager.sendtoWait(buf, buflen, RH_BROADCAST_ADDRESS)) {
+      safePrintln(" -> sent");
       return true;      
     } else {
-      //safePrintln("Sending failed (no ack)");
+      safePrintln(" -> failed (no ack)");
       return false;
     }
     
