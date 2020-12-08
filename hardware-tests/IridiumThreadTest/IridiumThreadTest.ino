@@ -146,12 +146,14 @@ void radio_thread(int inc) {
     tcdata_lock.unlock();
 
     // get SPI mutex and send packet over radio
+    safePrintln("* about to send ism packet");
     while ( !spi_lock.lock() );
     analogWrite(LED_ISM_TX, 100);
-    safePrintln("about to send ism packet");
     logNode.log(p);
     analogWrite(LED_ISM_TX, 5);
     spi_lock.unlock();
+
+    delete p;
   }
 }
 

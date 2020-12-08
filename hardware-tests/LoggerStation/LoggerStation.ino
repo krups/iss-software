@@ -47,4 +47,5 @@ void loop() {
   if( station.waitForAndPrintMessage() ){
     digitalWrite(LED, !digitalRead(LED));
   }
+  delay(1000);
 }

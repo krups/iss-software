@@ -8,7 +8,7 @@
 
 class RadioLoggerStation : public RadioLogger {
 public:
-  RadioLoggerStation() : RadioLogger() {};
+  RadioLoggerStation() : RadioLogger(), pcount(0), buflen(0) {};
 
   bool waitForAndPrintMessage() {
     if (rf69_manager.available())
@@ -18,12 +18,14 @@ public:
       uint8_t from;
       
       if (rf69_manager.recvfromAck(buf, &len, &from)) {
-        //Serial.print("got "); Serial.print(len); Serial.println(" bytes");
-        //Serial.print("last byte is: "); Serial.println(buf[len-1], HEX);
+        Serial.print("got "); Serial.print(len); Serial.println(" bytes");
+        Serial.print("last byte is: "); Serial.println(buf[len-1], HEX);
         buf[len] = 0; // zero out remaining string
         lastPacketFrom = from;
         lastRSSI = rf69.lastRssi();
         //Serial.write((char*)buf);
+    
+        buflen = len;
     
         decodePackets(len);
       }     
@@ -72,62 +74,73 @@ private:
     int pcount = 0;   // current count of instantiated packets
     uint8_t idx = 0;  // current position within buffer
     
-    while( idx < len-1 ){      
-      switch(buf[idx++]){
+    while( idx < len-1 ){  
       
-        case PTYPE_TELEM:
-          Serial.print("got TELEM packet");
-          pbuf[pcount] = new AccPacket(&buf[idx]);
-          pcount++;
-          idx += TELEM_T_SIZE;
-          break;
-          
-        case PTYPE_ACCELSTATS:
-          Serial.print("got ACEL_STATS packet");
-          pbuf[pcount] = new AccStatsPacket(&buf[idx]);
-          pcount++;
-          idx += ACC_STAT_T_SIZE;
-          break;
-          
-        case PTYPE_TC:
-          Serial.print("got TC packet");
-          pbuf[pcount] = new TcPacket(&buf[idx]);
-          pcount++;
-          idx += TC_T_SIZE;
-          break;
-          
-        case PTYPE_ACCELSINGLE:
-          Serial.println("got ACCEL packet");
-          Serial.print("  ");
-          Serial.println(*((uint32_t*)&buf[idx+1])); 
-          Serial.println(*((uint32_t*)&buf[idx+5]));
-          Serial.println(*((uint32_t*)&buf[idx+7]));
-          Serial.println(*((uint32_t*)&buf[idx+9]));
-          pbuf[pcount] = new AccPacket(&buf[idx]);
-          pcount++;
-          idx += ACC_T_SIZE;
-          break;
-          
-        case PTYPE_IMUSTATS:
-          Serial.print("got IMU_STATS packet NoW WhAHt");
-          break;
-          
-        default:
-          Serial.println(" OUT OF WACHK ON THE PACKET DECODE");
+      Serial.print("idx=");
+      Serial.println(idx);
+      Serial.print("pcount=");
+      Serial.println(pcount);
+      
+      //
+      if( buf[idx] == PTYPE_TELEM ){
+        Serial.print("got TELEM packet");
+        pbuf[pcount] = new AccPacket(&buf[idx+1]);
+        pcount++;
+        idx += TELEM_T_SIZE+1;
+      } 
+      
+      // min/max stats over a period of time from the high g accelerometer
+      else if( buf[idx] == PTYPE_ACCELSTATS ){
+        Serial.print("got ACEL_STATS packet");
+        pbuf[pcount] = new AccStatsPacket(&buf[idx+1]);
+        pcount++;
+        idx += ACC_STAT_T_SIZE;
+      } 
+      
+      // timestamped thermocouple packet (containing TC_COUNT readings)
+      else if( buf[idx] == PTYPE_TC ){
+        Serial.print("got TC packet");
+        pbuf[pcount] = new TcPacket(&buf[idx]);
+        pcount++;
+        idx += TC_T_SIZE;
+      } 
+      
+      // singe timestamped high g accelerometer reading
+      else if( buf[idx] == PTYPE_ACCELSINGLE ){
+        Serial.println("got ACCEL packet");
+        pbuf[pcount] = new AccPacket(&buf[idx]);
+        Serial.println( ((AccPacket*)pbuf[pcount])->t() ); Serial.print("\t"); 
+        Serial.println( ((AccPacket*)pbuf[pcount])->x() ); Serial.print("\t");
+        Serial.println( ((AccPacket*)pbuf[pcount])->y() ); Serial.print("\t");
+        Serial.println( ((AccPacket*)pbuf[pcount])->z() ); Serial.println("");
+        pcount++;
+        idx += ACC_T_SIZE;
+      } 
+      
+      // unrecognized packet     
+      else {
+        Serial.println(" OUT OF WACHK ON THE PACKET DECODE, discarding entire buffer (for now)");
+        idx = len; // stop processing
       }
-    
     }
     
   }
 
-  void printTCPacket(tc_t data) {
-  
+  void printPackets() {
+    Serial.println("*** printing packet...");
+    for( int i=0; i<pcount; i++ ){
+      Serial.println(pbuf[i]->toString());
+    }
+    Serial.println("done");
   }
   
+  int pcount;
   Packet *pbuf[PACKET_BUFFER_NUM_PACKETS];
   
   int lastRSSI;
   int lastPacketFrom;
+  
+  int buflen;
   uint8_t buf[RH_RF69_MAX_MESSAGE_LEN];
 };
 

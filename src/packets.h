@@ -84,6 +84,7 @@ public:
   }
   ~Packet() { delete _data; safePrintln("deleted packet");}
   
+  virtual String toString () {};
   char type() const { return _type; }
   int size() const { return _size; }
   uint8_t* data() const { return _data; }
@@ -109,6 +110,16 @@ public:
     *(float*)(&_data[12])        = tc2_temp;
   }
   
+  String toString(bool with_timestamp) {
+    String a;
+    if( with_timestamp ){
+      a = String(t()) + "\t";
+    }
+    a += String(batt()) + "\t" + String(tc1_temp()) + "\t" + String(tc2_temp());
+    
+    return a;
+  }
+  
   unsigned long t(){return *((unsigned long*)&_data[0]);}
   float batt(){return *((float*)&_data[4]);}
   float tc1_temp(){return *((float*)&_data[8]);}
@@ -129,6 +140,15 @@ public:
     *(uint16_t*)(&_data[4])      = x;
     *(uint16_t*)(&_data[6])      = y;
     *(uint16_t*)(&_data[8])      = z;
+  }
+
+  String toString(bool with_timestamp) {
+    String a;
+    if( with_timestamp ){
+      a = String(t()) + "\t";
+    }
+    a += String(x()) + "\t" + String(y()) + "\t" + String(z());
+    return a;
   }
 
   unsigned long t(){return *((unsigned long*)&_data[0]);}
@@ -159,6 +179,17 @@ public:
     *(uint16_t*)(&_data[16]) = z_min;
     *(uint16_t*)(&_data[18]) = z_max;
   }
+  
+  String toString(bool with_timestamp) {
+    String a;
+    if( with_timestamp ){
+      a = String(tmin()) + "\t" + String(tmax());
+    }
+    a += String(x_min()) + "\t" + String(x_max()) + "\t" + String(y_min()) + "\t" + String(y_max()) + "\t" + String(z_min()) +" \t" + String(z_max());
+    
+    return a;
+  }
+  
   unsigned long tmin(){return *((unsigned long*)&_data[0]);}
   unsigned long tmax(){return *((unsigned long*)&_data[4]);}
   uint16_t x_min(){return *((uint16_t*)&_data[8]);}
@@ -183,6 +214,20 @@ public:
     }
     *(unsigned long*)(&_data[4*TC_COUNT]) = time;
   }
+
+  
+  String toString(bool with_timestamp) {
+    String a;
+    if( with_timestamp ){
+      a = String(time()) + "\t";
+    }
+    for( int i=0; i < TC_COUNT; i++ ){
+      a += String(data()[i]) + ((i==TC_COUNT-1) ? "" : "\t");
+    }
+    
+    return a;
+  }
+
 
   float* data(){ return (float *)_data; }
   unsigned long time(){return *((unsigned long*)&_data[4*TC_COUNT]);}

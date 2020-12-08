@@ -1,6 +1,8 @@
 #ifndef TcInterface_h
 #define TcInterface_h
 
+#include "config.h"
+
 #if defined(ADAFRUIT_TRINKET_M0) || defined(__MK64FX512__)
 
 // switch pin defs based depending on if this

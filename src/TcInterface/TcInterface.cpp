@@ -195,7 +195,7 @@ Adafruit_MAX31856& TcInterface::get_max_from_tc(int tc){
 
 
 void TcInterface::set_types_from_chars(char* tc_types){
-    for(int i = 0; i < 8; i++){
+    for(int i = 0; i < TC_COUNT; i++){
         switch (tc_types[i])
         {
             case 'B':
