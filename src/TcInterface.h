@@ -2,39 +2,6 @@
 #define TcInterface_h
 
 #include "config.h"
-
-#if defined(ADAFRUIT_TRINKET_M0) || defined(__MK64FX512__)
-
-// switch pin defs based depending on if this
-// code is running on the safety processor or the 
-// main Teensy 3.5
-#if defined(ADAFRUIT_TRINKET_M0)
-  #define CS_TC1      1
-  #define CS_TC2      13
-  #define SEC_CTRL_2  0
-  #define SEC_ACT     7
-  #define SEC_CTRL_1  8
-  #define MUX0        23
-  #define MUX1        24
-  #define TC1_FAULT   21
-  #define TC2_FAULT   22
-  #define SPI_US SEC_CTRL_2
-  #define SPI_THEM SEC_CTRL_1
-#elif defined(__MK64FX512__) // teensy 3.5
-  #define CS_TC1 20
-  #define CS_TC2 21
-  #define SEC_CTRL_2  27
-  #define SEC_CTRL_1  39
-  #define MUX0 16
-  #define MUX1 17
-  #define TC1_FAULT 25
-  #define TC2_FAULT 26
-  #define SPI_US SEC_CTRL_1
-  #define SPI_THEM SEC_CTRL_2
-#else
-//#error "Unsupported TC pin config, plz fix TcInterface.h"
-#endif
-
 #include <Adafruit_MAX31856.h>
 
 // Encapsulate selection and reading of thermocouple values
@@ -79,10 +46,9 @@ class TcInterface
         int mux1;// Input for mux to select thermocouple output
         int tc1_fault; // Fault pin for "TC1" MAX31856
         int tc2_fault;         
-        char tc_type_lookup[8];
+        char tc_type_lookup[TC_COUNT];
         void set_types_from_chars(char* tc_types);
         Adafruit_MAX31856& get_max_from_tc(int tc);
 };
 
-#endif
 #endif

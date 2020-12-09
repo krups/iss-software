@@ -6,12 +6,14 @@
  * this acts as a transparent serial bridge via RFM69 radio
  * all it does is wait for a packet and dump it verbatim to the serial console.
  */
+
+
 #include "packets.h"
-#include "RadioLogger/RadioLoggerStation.h"
+#include "RadioLogger.h"
 
-#define LED           13
+#define LED 13
 
-RadioLoggerStation station;
+RadioLogger station;
 
 
 void safePrint(String s) {
@@ -36,16 +38,24 @@ void setup()
   
   if( station.begin() ){
     digitalWrite(LED, HIGH);
-    //Serial.println("radio initialized");
+    Serial.println("radio initialized");
   } else {
     digitalWrite(LED, LOW);
-    //Serial.println("radio failed to init");
+    Serial.println("radio failed to init");
   }
 }
 
 void loop() {
-  if( station.waitForAndPrintMessage() ){
-    digitalWrite(LED, !digitalRead(LED));
+  if( station.available() ){
+
+    if( station.receivePackets() ){
+
+      station.printPackets();
+
+      station.deletePackets();
+
+      digitalWrite(LED, !digitalRead(LED));
+    }
+    
   }
-  delay(1000);
 }

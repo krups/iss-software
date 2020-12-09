@@ -2,13 +2,15 @@
 * KREPE ISS Mission
 * Dec 2020
 *
-* SDLogger supports writing to multiple files, referenced by a file ID.
+* Main mission config params
 * 
 */
 
 
 #ifndef CONFIG_H
 #define CONFIG_H
+
+#include "pins.h"
 
 // the different mission scenarios
 #define MISSION_REAL_SHUTTLE 1

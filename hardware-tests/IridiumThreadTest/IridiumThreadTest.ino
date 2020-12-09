@@ -10,21 +10,12 @@
 #define NODE_ADDRESS 2
 
 #include "src/packets.h"
-#include "src/TcInterface/TcInterface.h"
-#include "src/RadioLogger/RadioLoggerNode.h"
+#include "src/TcInterface.h"
+#include "src/RadioLogger.h"
 #include <IridiumSBD.h>
 #include <TeensyThreads.h>
 
-
-#define LED_IR_ON    3
-#define LED_IR_SIG   4
-#define LED_IR_TX    5
-#define LED_ISM_TX   6
-#define LED_ACT      7
-
-#define PIN_IR_ENABLE 23
-
-RadioLoggerNode logNode;
+RadioLogger *logNode = new RadioLogger();
 char types[8] = "KKKKKKKK";
 TcInterface tc(types);
 
@@ -130,10 +121,10 @@ void tc_thread(int inc) {
 void radio_thread(int inc) {
   
   while ( !spi_lock.lock() );
-  if( logNode.begin() ){
+  if( logNode->begin() ){
     safePrintln("log node started");
     analogWrite(LED_ISM_TX, 5);
-    logNode.setRetries(2);
+    logNode->setRetries(2);
   } else {
     safePrintln("log node failed to start");
   }
@@ -152,7 +143,7 @@ void radio_thread(int inc) {
     spi_lock.lock(1000);
     if( spi_lock.getState() ){
       analogWrite(LED_ISM_TX, 100);
-      logNode.log(p);
+      logNode->send(p, STATION_ADDRESS);
       analogWrite(LED_ISM_TX, 5);
       spi_lock.unlock();
     }

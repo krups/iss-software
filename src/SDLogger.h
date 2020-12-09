@@ -161,6 +161,10 @@ public:
   // Take uniform sample with number of bytes = `size` from file with id=`id`
   // Put result in sam_buf
   void sample(int id, byte* sam_buf, unsigned long size){
+    if( !_idValid(id) ){
+      safePrintln("attempt to sample file with ID that doesn't exist");
+      return;
+    }
     // open file referenced by id
     _fh = SD.open(_fnames[id].c_str(), FILE_READ);
     if( !_fh ) {
@@ -187,8 +191,9 @@ public:
       packet_size = ACC_T_SIZE;
       break;
     case 'I':
+      // fall through to default for now
       //packet_size = IMU
-      break;
+      //break;
     default:
       if(USBSERIAL_DEBUG) safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");
       return;

@@ -2,7 +2,7 @@
 * KREPE ISS Mission
 * Dec 2020
 *
-* SDLogger supports writing to multiple files, referenced by a file ID.
+* Packet definitions
 * 
 */
 
