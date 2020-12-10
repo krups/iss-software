@@ -42,14 +42,12 @@
   #define RFM69_CS      8
   #define RFM69_INT     3
   #define RFM69_RST     4
-  #define NODE_ADDRESS STATION_ADDRESS
 // teensy 3.5
 #elif defined(__MK64FX512__)
 // flight comp v1.1
   #define RFM69_CS      9
   #define RFM69_INT     29
   #define RFM69_RST     28
-  #define NODE_ADDRESS CAPSULE_ADDRESS
 #else
 #error "Unsupported target device for radio pin config, plz fix RadioLogger.h"
 #endif

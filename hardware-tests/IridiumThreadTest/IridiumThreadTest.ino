@@ -7,15 +7,19 @@
  */
 
 // radio logger node class needs this defined
-#define NODE_ADDRESS 2
+#define NODE_ADDRESS CAPSULE_ADDRESS
 
 #include "src/packets.h"
 #include "src/TcInterface.h"
 #include "src/RadioLogger.h"
 #include <IridiumSBD.h>
 #include <TeensyThreads.h>
+#include <Snooze.h>
 
-RadioLogger *logNode = new RadioLogger();
+
+RadioLogger logNode;
+
+
 char types[8] = "KKKKKKKK";
 TcInterface tc(types);
 
@@ -121,10 +125,10 @@ void tc_thread(int inc) {
 void radio_thread(int inc) {
   
   while ( !spi_lock.lock() );
-  if( logNode->begin() ){
+  if( logNode.begin() ){
     safePrintln("log node started");
     analogWrite(LED_ISM_TX, 5);
-    logNode->setRetries(2);
+    logNode.setRetries(5);
   } else {
     safePrintln("log node failed to start");
   }
@@ -143,7 +147,7 @@ void radio_thread(int inc) {
     spi_lock.lock(1000);
     if( spi_lock.getState() ){
       analogWrite(LED_ISM_TX, 100);
-      logNode->send(p, STATION_ADDRESS);
+      logNode.send(p, STATION_ADDRESS);
       analogWrite(LED_ISM_TX, 5);
       spi_lock.unlock();
     }

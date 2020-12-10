@@ -10,6 +10,7 @@
 #define PACKETS_H
 
 #include "config.h"
+#include "commands.h"
 
 extern void safePrintln(String s);
 extern void safePrint(String s);
@@ -22,15 +23,25 @@ Packet types
 #define PTYPE_TC           'T'
 #define PTYPE_ACCELSINGLE  'B'
 #define PTYPE_IMUSTATS     'I'
-// board telemetry packet
+#define PTYPE_COMMAND      'C'
 
+// command packet
+typedef struct {
+  uint8_t cmdid;
+  uint8_t args;
+  uint8_t data[4];
+} cmd_t;
+#define CMD_T_SIZE      2 + NUM_CMD_PAYLOAD_BYTES
+
+// board telemetry packet
 typedef struct {
   unsigned long t;          // 4B, timestamp
   float batt;               // 4B, battery voltage
   float tc1_temp;           // 4B, TC converter 1 cold junction temperature
   float tc2_temp;           // 4B, TC converter 2 cold junction temperature
+  uint8_t ir_sig;           // 1B, iridium signal strength (0-5)
 } telem_t;
-#define TELEM_T_SIZE    16  // just enough for data, not including struct padding
+#define TELEM_T_SIZE    17  // just enough for data, not including struct padding
 
 // high g accel stats packet
 typedef struct {
@@ -61,6 +72,7 @@ typedef struct {
   uint16_t z;      // 2B
 } acc_t;           // --- 
 #define ACC_T_SIZE    10 // just enough for data, not including struct padding
+
 
 // "verbose" thermocouple data packet
 // not for compressing or sending, 
@@ -97,6 +109,51 @@ protected:
 };
 
 /*************************
+* command packet
+*/
+class CommandPacket : public Packet{
+public:
+  CommandPacket(uint8_t *buf) : Packet(PTYPE_COMMAND, CMD_T_SIZE) {
+    memcpy(_data, buf, _size);
+  }
+
+  CommandPacket(char cmd, uint8_t args, uint8_t *payload) : Packet(PTYPE_COMMAND, CMD_T_SIZE ) {
+    _data[0] = cmd;
+    _data[1] = args;
+    if( args == 0 ){
+      memset(&_data[2], 0, NUM_CMD_PAYLOAD_BYTES);
+    } else {
+      // tries to copy a full payload from payload buffer, make it is atleast that big (NUM_CMD_PAYLOAD_BYTES)
+      memcpy(&_data[2], payload, NUM_CMD_PAYLOAD_BYTES);
+    }
+  }
+  CommandPacket(char cmd) : Packet(PTYPE_COMMAND, CMD_T_SIZE ){
+    _data[0] = cmd;
+    memset(&_data[2], 0, NUM_CMD_PAYLOAD_BYTES + 1);
+  }
+  
+  String toString() {
+    String a;
+    a += "CMD ID: " + String(cmd()) + "\tARG ID: " + String(args());
+    
+    return a;
+  }
+  uint8_t cmd() { return _data[0]; }
+  uint8_t args() { return _data[1]; }
+  uint8_t* payload() { return &_data[3]; }
+};
+
+/*************************
+*
+class StringPacket {
+public:
+  StringPacket(String s) : Packet(PTYPE_STRING, s.length()+1) {
+    memcpy(_data, s.c_str(), s.length());
+  }
+};
+*/
+
+/*************************
 * telemetry packet class
 */
 class TelemPacket : public Packet {
@@ -118,7 +175,7 @@ public:
     if( with_timestamp ){
       a = String(t()) + "\t";
     }
-    a += String(batt()) + "\t" + String(tc1_temp()) + "\t" + String(tc2_temp());
+    a += String(batt()) + "\t" + String(tc1_temp()) + "\t" + String(tc2_temp()) + "\t" + String(ir_sig());
     
     return a;
   }
@@ -127,6 +184,7 @@ public:
   float batt(){return *((float*)&_data[4]);}
   float tc1_temp(){return *((float*)&_data[8]);}
   float tc2_temp(){return *((float*)&_data[12]);}
+  uint8_t ir_sig(){return _data[16]; }
 };
 
 /**************************

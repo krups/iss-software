@@ -12,6 +12,7 @@
 
 #include "pins.h"
 
+
 // the different mission scenarios
 #define MISSION_REAL_SHUTTLE 1
 #define MISSION_REAL_JSC     2
@@ -64,7 +65,10 @@
 #endif
 
 
-
+/****************************
+* Command packet config
+*/
+#define NUM_CMD_PAYLOAD_BYTES 4
 
 
 

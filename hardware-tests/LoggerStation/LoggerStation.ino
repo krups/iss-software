@@ -7,6 +7,7 @@
  * all it does is wait for a packet and dump it verbatim to the serial console.
  */
 
+#define NODE_ADDRESS STATION_ADDRESS
 
 #include "packets.h"
 #include "RadioLogger.h"
@@ -58,4 +59,5 @@ void loop() {
     }
     
   }
+  delay(10);
 }
