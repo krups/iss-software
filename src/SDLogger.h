@@ -27,7 +27,7 @@ extern void safePrint(String s);
 class SDLogger {
 
 public:
-  SDLogger() : _ready(false), _logNum(0), _openFileCount(0) {}
+  SDLogger() : _ready(false), _logNum(0) {}
   ~SDLogger() {}
   
   /***********************
@@ -56,42 +56,44 @@ public:
   }
   
   /*******************************
-  * create an entry in the current file list, stored by filename at index fileID
+  * create an entry in the current file list, stored by filename at index 'id'
   * param logtag: start of filename (appends a rolling number and .txt to the end)
-  * returns the fileId to reference this file
+  * returns true if the file was successfully created
   */  
-  int createLog(String logtag) {
+  bool createLog(String logtag, int id) {
     if( !_ready ){
-      if(USBSERIAL_DEBUG) safePrintln("SD not ready, please call begin()");
-      return -1;
+      if(USBSERIAL_DEBUG) safePrintln("SDLOG: not ready, please call begin()");
+      return false;
     }
   
     // only allow a few files open
-    if( _openFileCount >= MAX_OPEN_FILES ){
-      return -1;
+    if( id >= MAX_OPEN_FILES ){
+      return false;
     }
     
     // create filename and try to open file
     String fname;
     fname += (logtag + String(_logNum));
     if( fname.length() > 8 ){
-      safePrint("need shorter name");
+      safePrint("SDLOG: need shorter name");
     }
     fname +=".dat";
 
-    if(USBSERIAL_DEBUG) safePrint("filename is '");safePrint(fname);safePrintln("'");
-    
-    if(USBSERIAL_DEBUG) safePrint(("storing logfile entry: " + fname)); safePrintln(", file not yet created");
+    if(USBSERIAL_DEBUG) {
+      //safePrint("SDLOG: filename is '");
+      //safePrint(fname);safePrintln("'");
+      //safePrint(("SDLOG: storing logfile entry: " + fname));
+      //safePrintln(", file not yet created");
+    }
     _fh = SD.open(fname.c_str(), FILE_WRITE);
     if( _fh ) {
-      _fnames[_openFileCount] = fname;
-      if(USBSERIAL_DEBUG) safePrintln("  ok. opened log file: " + fname);
+      _fnames[id] = fname;
+      //if(USBSERIAL_DEBUG) safePrintln("SDLOG:  ok. opened log file: " + fname);
       _fh.close();
-      _openFileCount += 1;
-      return _openFileCount - 1;
+      return true;
     } else {
-      if(USBSERIAL_DEBUG) safePrintln("  err. couldnt open file: " + fname);
-      return -1;
+      //if(USBSERIAL_DEBUG) safePrintln("SDLOG:  err. couldnt open file: " + fname);
+      return false;
     }
   }
   
@@ -231,7 +233,7 @@ private:
       if(USBSERIAL_DEBUG) safePrintln("SD card not initialized");
       return false;
     }
-    if( (id >= _openFileCount) || (id < 0) ){
+    if( (id >= MAX_OPEN_FILES) || (id < 0) ){
       if(USBSERIAL_DEBUG) safePrintln("invalid file index");
       return false;
     }
@@ -240,7 +242,6 @@ private:
 
   bool _ready, _open[MAX_OPEN_FILES];
   int _logNum;
-  int _openFileCount;
   
   String _fnames[MAX_OPEN_FILES];
   File _fh;

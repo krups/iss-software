@@ -1,4 +1,7 @@
 
+#include "ArduinoLowPower.h"
+
+
 #define MOSI_PIN    4
 #define SCK_PIN     3
 #define MISO_PIN    2
@@ -17,7 +20,7 @@
 // the setup routine runs once when you press reset:
 void setup() {
   // initialize the spi port to high impedance
-  Serial.begin(115200);
+  //Serial.begin(115200);
   pinMode(MOSI_PIN, INPUT);
   pinMode(SCK_PIN, INPUT);
   pinMode(MISO_PIN, INPUT);
@@ -36,6 +39,7 @@ void setup() {
 
 // the loop routine runs over and over again forever:
 void loop() {
-  Serial.println("All pins but SEC_ACT in high z state, SEC_ACT=1");
-  delay(1000);
+  //Serial.println("All pins but SEC_ACT in high z state, SEC_ACT=1");
+  //delay(1000);
+  LowPower.sleep(60000);
 }

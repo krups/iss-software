@@ -61,8 +61,8 @@ void TcInterface::disable(void){
     digitalWrite(SPI_US, LOW);
     enabled = false;
 }
-
-bool TcInterface::read_all(float* arr, uint8_t* faults, bool force){  
+//float* arr, uint8_t* faults
+bool TcInterface::read_all(tcv_t *dest, bool force){  
     static int state = -1;
     bool m1c = max1.conversionComplete();
     bool m2c =  max2.conversionComplete();
@@ -80,7 +80,7 @@ bool TcInterface::read_all(float* arr, uint8_t* faults, bool force){
             uint8_t fault2 = max2.readFault();
 
             if (fault1) {
-                faults[state] = fault1;
+                dest->fault[state] = fault1;
                 /*if (fault1 & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
                 if (fault1 & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
                 if (fault1 & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
@@ -92,7 +92,7 @@ bool TcInterface::read_all(float* arr, uint8_t* faults, bool force){
                 //Serial.print(" on TC "); Serial.println(state+1);
             }
             if (fault2) {
-                faults[state+4] = fault2;
+                dest->fault[state+4] = fault2;
                 /*if (fault2 & MAX31856_FAULT_CJRANGE) Serial.println("Cold Junction Range Fault");
                 if (fault2 & MAX31856_FAULT_TCRANGE) Serial.println("Thermocouple Range Fault");
                 if (fault2 & MAX31856_FAULT_CJHIGH)  Serial.println("Cold Junction High Fault");
@@ -104,8 +104,10 @@ bool TcInterface::read_all(float* arr, uint8_t* faults, bool force){
                 //Serial.print(" on TC "); Serial.println(state+5);
             }
         
-            arr[state] = max1.readThermocoupleTemperature();
-            arr[state+4] = max2.readThermocoupleTemperature();
+            dest->data[state]   = max1.readThermocoupleTemperature();
+            if( state + 4 < TC_COUNT){
+              dest->data[state+4] = max2.readThermocoupleTemperature();
+            }
             if(state == 3){
                 // Before we start another round, check to see 
                 // if we need to let the other processor have control

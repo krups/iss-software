@@ -1,8 +1,10 @@
 #ifndef TcInterface_h
 #define TcInterface_h
 
-#include "config.h"
+
 #include <Adafruit_MAX31856.h>
+#include "config.h"
+#include "packets.h"
 
 // Encapsulate selection and reading of thermocouple values
 class TcInterface
@@ -18,7 +20,7 @@ class TcInterface
         );
         bool enable(void);
         void disable(void);
-        bool read_all(float* arr, uint8_t* faults, bool start);
+        bool read_all(tcv_t *dest, bool force);
 
         // Checks if either sensor has a fault.
         // Returns a uint16_t where the high byte is the fault in TC1

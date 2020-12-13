@@ -25,6 +25,12 @@ Packet types
 #define PTYPE_IMUSTATS     'I'
 #define PTYPE_COMMAND      'C'
 
+
+/************************************************************************************
+* Packet struct definitions for passing data between threads. Not used for sending or
+* logging since structs are word aligned and waste space
+*/
+
 // command packet
 typedef struct {
   uint8_t cmdid;
@@ -56,11 +62,10 @@ typedef struct {
 } acc_stat_t;
 #define ACC_STAT_T_SIZE    20 // just enough for data, not including struct padding
 
-// "compact" thermocouple data packet
-// keep track of time in seconds for packet ID
+// thermocouple measurement packet
 typedef struct {
   float data[TC_COUNT];  // tc measurements, 4 * TC_COUNT bytes
-  unsigned long time;       // in seconds,        4 bytes
+  unsigned long time;       // in ms
 } tc_t;
 #define TC_T_SIZE    (4*TC_COUNT) + 4 // just enough for data, not including struct padding
 
@@ -73,17 +78,28 @@ typedef struct {
 } acc_t;           // --- 
 #define ACC_T_SIZE    10 // just enough for data, not including struct padding
 
+// imu measurement
+typedef struct {
+  float ax;
+  float ay;
+  float az;
+  float gx;
+  float gy;
+  float gz;
+  float mx;
+  float my;
+  float mz;
+} imu_t;
 
-// "verbose" thermocouple data packet
-// not for compressing or sending, 
-// includes extra information about fault condition
-// on max31856 when measurement was taken
-// no timestamp because this is only used in reading
-// before logging
+// thermocouple data packet with fault conditions
 typedef struct {
   float data[TC_COUNT];
   byte fault[TC_COUNT];
 } tcv_t;
+
+/* end packet structure definitions */
+/***********************************************************************************/
+
 
 /**********************
 * base packet class
@@ -108,9 +124,15 @@ protected:
   int _size;
 };
 
-/*************************
-* command packet
+
+
+
+
+/******************************************************************************************
+* Class definitions for packet types define above. Provides member access and stringification 
 */
+#define NUM_CMD_PAYLOAD_BYTES 4
+// command packet
 class CommandPacket : public Packet{
 public:
   CommandPacket(uint8_t *buf) : Packet(PTYPE_COMMAND, CMD_T_SIZE) {
@@ -143,8 +165,9 @@ public:
   uint8_t* payload() { return &_data[3]; }
 };
 
-/*************************
-*
+
+/*
+// string log packet
 class StringPacket {
 public:
   StringPacket(String s) : Packet(PTYPE_STRING, s.length()+1) {
@@ -153,9 +176,7 @@ public:
 };
 */
 
-/*************************
-* telemetry packet class
-*/
+// board telemetry packet
 class TelemPacket : public Packet {
 public:
   TelemPacket(uint8_t *buf) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
@@ -187,9 +208,7 @@ public:
   uint8_t ir_sig(){return _data[16]; }
 };
 
-/**************************
-* acc sample packet class
-*/
+// once accel sample
 class AccPacket : public Packet {
 public:
   AccPacket(uint8_t *buf) : Packet( PTYPE_ACCELSINGLE, ACC_T_SIZE ) {

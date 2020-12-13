@@ -53,10 +53,10 @@
 #endif
 
 
-#define CAPSENSE0       1		            // input, read with touchRead(pin)
-#define CAPSENSE1       0	              // input, read with touchRead(pin)
-#define CAPSENSE2       15	            // input, read with touchRead(pin)
-#define CAPSENSE3	      30              // input, read with touchRead(pin)
+#define PIN_CAPSENSE0       1		            // input, read with touchRead(pin)
+#define PIN_CAPSENSE1       0	              // input, read with touchRead(pin)
+#define PIN_CAPSENSE2       15	            // input, read with touchRead(pin)
+#define PIN_CAPSENSE3	      30              // input, read with touchRead(pin)
 
 #define LED_IR_ON       3               // iridium modem powered on
 #define LED_IR_SIG      4               // iridium modem signal quality
@@ -64,25 +64,25 @@
 #define LED_ISM_TX      6               // ism radio on/transmitting
 #define LED_ACT         7               // general activity
 
-#define PIN_IR_ENABLE   23               // iridium activation signal
+#define PIN_IR_ENABLE   23               // iridium activation signal (active high output)
 
 #define CS_DSP          8		            // active low chip select for DSP310 pressure sensor
 
-#define BAT_STAT	      14              // high when charging
-#define BAT_SENSE	      A8              // battery voltage / 2 (halved by voltage divider)
+#define PIN_BAT_STAT	      14              // high when charging
+#define PIN_BAT_SENSE	      A8              // battery voltage / 2 (halved by voltage divider)
 
-#define BUZZER          24              // outout to piezo through 100ohm r
+#define PIN_BUZZER          24              // outout to piezo through 100ohm r
 
-#define RADIO_OFF_SIG   33              // pulled high when 3.3v to ism radio is present
+#define PIN_ISM_PRESENT   33              // pulled high when 3.3v to ism radio is present
 
-#define IMU_FSYNC       34	            // sync signal (not necessary for functionality)
-#define IMU_INT         35	            // interrupt pin (not necessary for functionality)
-#define ACC_X           A17             // x axis high g accel output
-#define ACC_Y           A18             // y axis high g accel output
-#define ACC_Z           A19             // x axis high g accel output
+#define PIN_IMU_FSYNC       34	            // sync signal (not necessary for functionality)
+#define PIN_IMU_INT         35	            // interrupt pin (not necessary for functionality)
+#define PIN_ACC_X           A17             // x axis high g accel output
+#define PIN_ACC_Y           A18             // y axis high g accel output
+#define PIN_ACC_Z           A19             // x axis high g accel output
 
-#define IRIDIUM_TX_ACT	A21	            // iridium output indicating the module is actively transmitting RF
-#define IRIDIUM_STATUS	A22	            //iridium output indicating an SBD message has arrived
+#define PIN_IRIDIUM_TX_ACT	A21	            // iridium output indicating the module is actively transmitting RF
+#define PIN_IRIDIUM_STATUS	A22	            // iridium output indicating an SBD message has arrived
 
 
 #endif

@@ -10,105 +10,809 @@
 #define NODE_ADDRESS CAPSULE_ADDRESS
 
 #include "src/packets.h"
+#include "src/SDLogger.h"
 #include "src/TcInterface.h"
 #include "src/RadioLogger.h"
 #include <IridiumSBD.h>
 #include <TeensyThreads.h>
 #include <Snooze.h>
+#include <ICM_20948.h>
+
+// IMU
+ICM_20948_I2C myICM;
+
+// Load drivers
+//SnoozeUSBSerial usb;
+SnoozeSPI       snoozeSPI;
+SnoozeTimer     timer;
+SnoozeUSBSerial snoozeSerial;
+SnoozeBlock     config_teensy35(snoozeSPI, timer, snoozeSerial);
+
+Threads::Mutex ns_lock; // need sleep lock, access to needSleep var
+volatile bool needSleep = false; // global flag that we know we need to sleep so prepare your thread
+
+Threads::Mutex sr_radio_lock;
+volatile bool sr_radio = false;  // is the radio thread ready for sleep
+
+Threads::Mutex sr_tc_lock;
+volatile bool sr_tc = false;     // is the tc thread ready to sleep
+
+Threads::Mutex sr_acc_lock;
+volatile bool sr_acc = false;    // acccel is ready to sleep
+
+Threads::Mutex sr_imu_lock;
+volatile bool sr_imu = false;  // imu is ready to sleep
+
+Threads::Mutex sr_sd_lock;    // is the sd logger ready to sleep
+volatile bool sr_sd = false;  // ready to sleep means  all packets written to logfiles
+
+Threads::Mutex sr_ir_lock;
+volatile bool sr_ir = false;  // imu is ready to sleep
+
+Threads::Mutex drp_lock;
+volatile bool debugRadioPresent = false; // is the debug radio powered?
+
+// for checking if we have a syslog file yet or not
+Threads::Mutex syslog_lock;
+volatile bool sysLogCreated = false;
+
+// are there packets in the command packet queue
+Threads::Mutex cmdPacket_lock;
+volatile int cmdPacketCount = 0;
+volatile Packet* cmdPackets[CMD_QUEUE_LENGTH];
+
+// have we detected activation
+volatile bool activation = false;
+Threads::Mutex act_lock;
 
 
-RadioLogger logNode;
+// Thermocouple to digital converter interface with mux control
+TcInterface tc(TC_TYPE_STRING);
 
 
-char types[8] = "KKKKKKKK";
-TcInterface tc(types);
+// sd log interface, supports creating and writing to files
+SDLogger sdlog;
 
+
+// ism debug radio interface 
+static RadioLogger logNode;
+
+
+
+// data ready flags for each data generating threads
+volatile bool dr_tc    = false;
+volatile bool dr_telem = false;
+volatile bool dr_imu   = false;
+volatile bool dr_acc   = false;
+//volatile bool icm_int  = false; // used by the imu thread with the icm-20948
+// data ready flag mutex
+Threads::Mutex dr_tc_lock;
+Threads::Mutex dr_telem_lock;
+Threads::Mutex dr_imu_lock;
+Threads::Mutex dr_acc_lock;
+
+
+// Mutex for hardware resources
+Threads::Mutex sd_lock;
 Threads::Mutex millis_lock;
 Threads::Mutex spi_lock;
 Threads::Mutex ser_lock;
-Threads::Mutex ircmd_lock;
-Threads::Mutex tcdata_lock;
+Threads::Mutex i2c_lock;
 
-volatile tc_t tcdata;
 
-////////////////////////////////////
-//           IRIDIUM VARS
-////////////////////////////////////
-#define IridiumSerial Serial4
+// thread safe access to sensor data structures
+Threads::Mutex tcdata_lock; 
+volatile tc_t tcdata;         // thermocouple data
+
+Threads::Mutex accdata_lock;
+volatile acc_t accdata;       // accelerometer data
+
+Threads::Mutex imudata_lock;
+volatile imu_t imudata;       // IMU data
+
+Threads::Mutex telemdata_lock;
+volatile telem_t telemdata;   // board telem data
+
+
+
+// IRIDIUM VARS
+#define IRIDIUM_SERIAL Serial4
 #define DIAGNOSTICS false// Change this to see diagnostics
-// Declare the IridiumSBD object
-IridiumSBD modem(IridiumSerial);
+IridiumSBD modem(Serial4);
 int signalQuality = -1;
 int irerr;
-int ircmd = 0;
-// command variables
-#define IR_SEND_TEST 1
-// #define IR_SEND_PACKET etc. 
+Threads::Mutex ircmd_lock;    // for giving commands to the iridium thread
+volatile int ircmd = 0;
 uint8_t signalBrightness[6] = {0, 2, 10, 50, 100, 250};
 
+
+/**************************************************************************
+ * Thread safe helpers for setting getting and updating flags and printing
+ */
+// thread safe copy of src boolean to dest boolean. 
+// dont use do assign a direct value to dest, use safeAssign for that
+void safeUpdate(bool *dest, bool *src, Threads::Mutex *m) {
+  // wait forever in 1000 ms intervals to do the assignment
+  while( !m->lock(100) );
+  *dest = *src;
+  m->unlock(); 
+}
+// thread safe assignement of a direct truth val to dest
+// pass this function a direct truth value
+void safeAssign(bool *dest, bool src, Threads::Mutex *m) {
+  // wait forever in 1000 ms intervals to do the assignment
+  while( !m->lock(100) );
+  *dest = src;
+  m->unlock(); 
+}
+// thread safe global read
+bool safeRead(bool *src, Threads::Mutex *m) {
+  bool ret = false;
+  while( !m->lock(100) );
+  ret = *src;
+  m->unlock(); 
+  return ret;
+}
+// thread safe access to the current run clock
 unsigned long safeMillis() {
   unsigned long m = 0;
-  millis_lock.lock(5);
+  while( !millis_lock.lock(5) );
   m = millis();
   millis_lock.unlock();
   return m;
 }
-
 void safePrint(String s) {
-  ser_lock.lock(10);
+  while( !ser_lock.lock(100) );
   Serial.print(s);
   ser_lock.unlock();
 }
-
 void safePrintln(String s) {
-  ser_lock.lock();
+  while( !ser_lock.lock(100) );
   Serial.println(s);
   ser_lock.unlock();
 }
+// end thread safe helpers
+/**********************************************************************************/
 
 
-// simple thermocouple reading thread keeps conversions happening as fast as possible
-// and updates a shared struct with new data
-void tc_thread(int inc) {
 
-  safePrintln("TC thread starting");
+/***********************************************************************************
+ * IMU thread helpers
+ */
+ void imuSleep() {
+  while( !i2c_lock.lock(1000) );
+  myICM.lowPower(true);
+  myICM.sleep(true);
+  i2c_lock.unlock();
+}
+void imuWake() {
+  while( !i2c_lock.lock(1000) );
+  myICM.sleep(false);
+  myICM.lowPower(false);
+  i2c_lock.unlock();
+}
+bool imuInit() {
+  bool initialized = false;
+  while( !initialized ){
 
-  while( !spi_lock.lock() );
-  if( tc.enable() ){
-    safePrintln("TC INIT OK");
-  } else {
-    safePrintln("TC INIT FAIL!!");
+    // start ICM-20948
+    if(USBSERIAL_DEBUG) safePrintln("IMU: trying to start ICM-20948");
+    while( !i2c_lock.lock(100) );
+    myICM.begin( Wire, 0 ); // i2c coms, address bit=0
+    
+    if( myICM.status != ICM_20948_Stat_Ok ){
+      i2c_lock.unlock();
+      threads.delay(100);
+    }else{
+      i2c_lock.unlock();
+      initialized = true;
+    }
+
+    // software reset for known state
+    while( !i2c_lock.lock(100) );
+    myICM.swReset( );
+    if( myICM.status != ICM_20948_Stat_Ok){
+      //safePrintln("IMU: software reset upon init failed");
+      initialized = false;
+    }
+    i2c_lock.unlock();
+
+    imuWake();
+    
+    // Set full scale range struct for both acc and gyr
+    ICM_20948_fss_t myFSS;
+    myFSS.a = gpm16; // set +/-16g sensitivity              
+    myFSS.g = dps2000; // set 2000 dps
+    while( !i2c_lock.lock(100) );
+    myICM.setFullScale( (ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), myFSS );
+    if( myICM.status != ICM_20948_Stat_Ok){
+      //safePrintln("IMU: failed to set full scale range");
+      initialized = false;
+    }
+    myICM.setSampleMode( (ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), ICM_20948_Sample_Mode_Cycled ); 
+
+    ICM_20948_smplrt_t mySmplrt;
+    mySmplrt.g = 100;
+    myICM.setSampleRate( ICM_20948_Internal_Gyr, mySmplrt );
+
+    // configure interrupts to drive the line low when raw data is ready
+    myICM.cfgIntActiveLow(true);
+    myICM.cfgIntOpenDrain(false);
+    myICM.cfgIntLatch(true);
+    myICM.intEnableRawDataReady(true);
+    i2c_lock.unlock();
   }
-  spi_lock.unlock();
+  return initialized;
+}
+//void imuISR() {
+//  icm_int = true;
+//}
+// imu thread
+void imu_thread(int inc) {
+  // IMU SETUP
+  if( imuInit() ){
+    if(USBSERIAL_DEBUG) safePrintln("IMU: INIT OK");
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("IMU: INIT FAILED");
+  }
 
-  float vals[8] = {0,0,0,0,0,0,0,0};
-  uint8_t faults[8] = {0,0,0,0,0,0,0,0}; 
-  unsigned long lastData = safeMillis();
+  // local copy of sleep status
+  bool mNeedSleep = false;
 
-  safePrintln("HERE");
+  // dont sleep again until we have logged a measurement
+  bool tmss = false;
+
+  float ax;
+  float ay;
+  float az;
+  float gx;
+  float gy;
+  float gz;
+  float mx;
+  float my;
+  float mz;
   
+  // IMU DATA COLLECTION, CONTROL, AND LOGGING
   while(1) {
 
-    while( !spi_lock.lock() );
+    // check if we need to prepare to sleep
+    safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+    if( mNeedSleep ){
+      safePrintln("IMU: sleeping");
+      imuSleep();
+      
+      // safely let the sleep thread know we are ready
+      while( !sr_imu_lock.lock(1000) );
+      sr_imu = true;
+      sr_imu_lock.unlock();
+
+      // now we are waiting to be put to sleep, and checking if we've woken up
+      while(1) {
+        safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+        // if we woke up, reconfigure the IMU
+        if( !mNeedSleep ){
+          safePrintln("IMU: waking up");
+          imuWake();
+
+          // clear the sleep ready flag
+          while( !sr_imu_lock.lock(1000) );
+          sr_imu = false;
+          sr_imu_lock.unlock();
+          break;
+        }
+      }
+    }
+    
+
+    // collect IMU data
+    bool gotData = false;
+    if( !digitalRead(PIN_IMU_INT) ){
+      while( !i2c_lock.lock(100) );
+      myICM.clearInterrupts();
+      myICM.getAGMT();      // The values are only updated when you call 'getAGMT'
+      ax = myICM.accX();
+      ay = myICM.accY();
+      az = myICM.accZ();
+      gx = myICM.gyrX();
+      gy = myICM.gyrX();
+      gz = myICM.gyrX();
+      mx = myICM.magX();
+      my = myICM.magY();
+      mz = myICM.magZ();
+      gotData = true;
+      i2c_lock.unlock();
+    }
+
+
+    // log IMU data
+    if( gotData ){
+      //safePrintln("IMU: got data");
+      while( !imudata_lock.lock(100) );
+        
+      imudata_lock.unlock();
+    }
+    
+  }  
+}
+
+/**********************************************************************************
+ * SD Logging thread
+ */
+
+void syslog(String s) {
+  bool mSysLogCreated = false;
+  safeUpdate(&mSysLogCreated, &sysLogCreated, &syslog_lock);
+  if( mSysLogCreated ){
+    unsigned long m = safeMillis();
+    while( !sd_lock.lock(100) );
+    sdlog.logMsg(LOGID_SYS, String(m) + "\t" + s);
+    sd_lock.unlock();
+  }
+}
+
+void sd_thread(int inc) {
+  bool ret = false; // for return values
+  bool mNeedSleep = false;
+  
+  if(USBSERIAL_DEBUG) safePrintln("SD: thread starting...");
+
+  while( !sd_lock.lock(1000) );
+  while( !spi_lock.lock(1000) );
+  sdlog.begin();
+  spi_lock.unlock();
+  sd_lock.unlock();
+  
+  threads.delay(100);
+  
+  // create logfile for accelerometer data
+  if(USBSERIAL_DEBUG) safePrintln("SD: Creating logfile for accelerometer data...");
+  while( !sd_lock.lock(1000) );
+  while( !spi_lock.lock(1000) );
+  String logname = LOGNAME_ACC;
+  ret = sdlog.createLog(logname, LOGID_ACC);
+  spi_lock.unlock();
+  sd_lock.unlock();
+  if( ret ){
+    if(USBSERIAL_DEBUG) safePrintln("SD: ACC FILE OK");
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("SD: failed to create acc file");
+  }
+
+  threads.delay(500);
+
+  // create log file for tc data
+  if(USBSERIAL_DEBUG) safePrintln("Creating logfile for thermocouple data...");
+  while( !sd_lock.lock(1000) );
+  while( !spi_lock.lock(1000) );
+  logname = LOGNAME_TC;
+  ret = sdlog.createLog(logname, LOGID_TC);
+  spi_lock.unlock();
+  sd_lock.unlock();
+  if( ret ){
+    if(USBSERIAL_DEBUG) safePrintln("SD: TC FILE OK");
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("SD: failed to create tc file");
+  }
+
+  threads.delay(500);
+
+  // create logfile for telemetry data
+  if(USBSERIAL_DEBUG) safePrintln("Creating logfile for telemetry data...");
+  while( !sd_lock.lock(1000) );
+  while( !spi_lock.lock(1000) );
+  logname = LOGNAME_TELEM;
+  ret = sdlog.createLog(logname, LOGID_TELEM);
+  spi_lock.unlock();  
+  sd_lock.unlock();
+  if( ret ){
+    if(USBSERIAL_DEBUG) safePrintln("SD: TELEM FILE OK");
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("SD: failed to create telem file");
+  }
+
+  threads.delay(500);
+
+  // create logfile for imu data
+  if(USBSERIAL_DEBUG) safePrintln("Creating logfile for IMU data...");
+  while( !sd_lock.lock(1000) );
+  while( !spi_lock.lock(1000) );
+  logname = LOGNAME_IMU;
+  ret = sdlog.createLog(logname, LOGID_IMU);
+  spi_lock.unlock();
+  sd_lock.unlock();
+  if( ret ){
+    if(USBSERIAL_DEBUG) safePrintln("SD: IMU FILE OK");
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("SD: failed to create IMU file");
+  }
+
+  threads.delay(500);
+
+  // create syslog file
+  if(USBSERIAL_DEBUG) safePrintln("Creating logfile for syslog messages...");
+  while( !sd_lock.lock(1000) );
+  while( !spi_lock.lock(1000) );
+  logname = LOGNAME_SYS;
+  ret = sdlog.createLog(logname, LOGID_SYS);
+  spi_lock.unlock();
+  sd_lock.unlock();
+  if( ret ){
+    if(USBSERIAL_DEBUG) safePrintln("SD: SYSLOG FILE OK");
+    safeAssign(&sysLogCreated, true, &syslog_lock);
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("SD: failed to create SYSLOG file");
+  }
+
+  
+
+
+  bool once = true;
+
+  while( 1 ){
+    // SLEEP HANDLING
+    // check if we need to prepare to sleep
+    safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+    if( mNeedSleep ){
+      safePrintln("SD: sleeping");
+      
+      // safely let the sleep thread know we are ready
+      while( !sr_sd_lock.lock(1000) );
+      sr_sd = true;
+      sr_sd_lock.unlock();
+
+      // now we are waiting to be put to sleep, and checking if we've woken up
+      while(1) {
+        safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+        // if we woke up, reconfigure the IMU
+        if( !mNeedSleep ){
+          safePrintln("SD: waking up");
+          
+
+          // clear the sleep ready flag
+          while( !sr_sd_lock.lock(1000) );
+          sr_sd = false;
+          sr_sd_lock.unlock();
+          break;
+        }
+      }
+    }
+
+    // MAIN LOGGING
+    
+    // check for accel stat data to log, w muttex
+    /*
+    bool rdy = false;
+    while( !acc_lock.lock() );
+    if( acc_ready ){
+      rdy = true;
+      acc_ready = false;
+    }
+    acc_lock.unlock();
+
+    // start logging if we have data
+    if( rdy ){
+      if(USBSERIAL_DEBUG) safePrint("* writing acc data");
+
+      // get mutex on acc data structure and build a packet from it
+      unsigned long now = millis();
+      while( !acc_lock.lock() );
+      AccPacket p(acc_data.x, acc_data.y, acc_data.z, now);
+      acc_lock.unlock();
+
+      // try logging packet
+      while( !sd_lock.lock() );
+      byte ret = sdlog.logBin(accBinLogId, &p);
+      sd_lock.unlock();
+      
+      if( ret > 0 ){
+        if(USBSERIAL_DEBUG) safePrintln("ok");
+      } else {
+        if(USBSERIAL_DEBUG) safePrintln("fail");
+      }
+      
+      rdy = false;
+    } 
+
+    while( !tc_lock.lock() );
+    if( tc_ready ){
+      rdy = true;
+      tc_ready = false;
+    }
+    tc_lock.unlock();
+    
+    if( rdy ){
+      if(USBSERIAL_DEBUG) safePrint("* writing to TC file...");
+
+      // get tc data
+      while( !tc_lock.lock() );
+      TcPacket p(tc_data.data, millis());
+      tc_lock.unlock();
+
+      // try to log to binary file
+      while( !sd_lock.lock() );
+      byte ret = sdlog.logBin(tcBinLogId, &p);
+      sd_lock.unlock();
+
+      if( ret > 0 ){
+        if(USBSERIAL_DEBUG) safePrintln("ok");
+      } else {
+        if(USBSERIAL_DEBUG) safePrintln("fail");
+      }
+      
+      rdy = false;
+    }
+
+    if( once && millis() > 30000 ){
+      safePrintln("#####################################\n###########################\nsampling acc log############################3");
+      unsigned long sz = 10*((int)TC_T_SIZE);
+      safePrint("TC_T_SIZE = "); safePrintln(TC_T_SIZE);
+      safePrint("sz = "); safePrintln(sz);
+      uint8_t buf[sz];
+      while( !sd_lock.lock() );
+      sdlog.sample(tcBinLogId, buf, sz);
+      sd_lock.unlock();
+      once = false;
+    }
+    */
+    threads.delay(1000);
+  }
+}
+
+
+
+/**********************************************************************************
+ * Accelerometer thread
+ * 
+ */
+void acc_thread(int inc) {
+
+  bool tmss = false;
+
+  while(1) {
+    
+  }
+}
+
+
+/***********************************************************************************
+ * sleep thread
+ */
+void sleep_thread(int inc) {
+  // CONFIGURE SLEEP PARAMS
+
+  int  who;          // output of sleep function
+  bool mAct = false; // our copy of activation status
+  bool mDrp = false; // our copy of debug radio present;
+  int  state = 0;    // state for pre-activation sleep routine
+
+  bool ss_radio = false, 
+       ss_tc    = false, 
+       ss_acc   = false, 
+       ss_imu   = false,
+       ss_ir    = false;
+
+  safePrintln("SLEEP: starting sleep thread");
+
+  threads.delay(10000);
+  
+  timer.setTimer(10000);
+
+
+  // SLEEP CONTROL prior to activation
+  while(1) {
+
+    // check activation status
+    safeUpdate(&mAct, &activation, &act_lock);
+    if( mAct ){
+      safePrintln("SLEEP: DETECTED ACTIVATION");
+      break;
+    }
+    
+    switch(state) {
+      // not activated, need to sleep
+      case 0:
+        // TODO:
+        // need logic to prevent sleep thread starting sleep before we have had a 
+        // chance to make a TC measurement and update our decicision about activation
+        threads.delay(10000);
+        
+        while( !ns_lock.lock(10) );
+        needSleep = 1;
+        ns_lock.unlock();
+        safePrintln("SLEEP: requesting threads prepare for sleep");
+        state = 1;
+        break;
+      
+      // needing sleep, have to wait for each thread to be ready
+      // need to be kind about checking status of each threads readiness
+      case 1:
+        // update our copy of each threads sleep status 
+        safeUpdate(&ss_radio, &sr_radio, &sr_radio_lock);
+        safeUpdate(&ss_tc,    &sr_tc,    &sr_tc_lock);
+        safeUpdate(&ss_acc,   &sr_acc,   &sr_acc_lock);
+        safeUpdate(&ss_imu,   &sr_imu,   &sr_imu_lock);
+        safeUpdate(&ss_ir,    &sr_ir,    &sr_ir_lock);
+
+        // the radio thread is always ready to sleep when no radio is present
+        safeUpdate(&mDrp, &debugRadioPresent, &drp_lock);
+        if( !ss_radio && mDrp ){
+          ss_radio = false;
+        } else {
+          ss_radio = true;
+        }
+     
+        // if all the threads are ready to sleep
+        if( ss_tc && ss_imu && ss_radio){
+          safePrintln("SLEEP: all threads acknowledged request for sleep, proceeding");
+          state = 2;
+        }
+        break;
+      
+      // all threads have prepared for sleep, lets do it
+      case 2:
+        // now we go to sleep
+        who = Snooze.deepSleep( config_teensy35 ); // return module that woke processor
+        
+        // we're awake! let the threads know sleeping has finished... for now
+        while( !ns_lock.lock(10) );
+        needSleep = 0;
+        ns_lock.unlock();
+        
+        safePrintln("SLEEP: WOKE UP AND SET NEED SLEEP = 0");
+        
+        // back to needing sleep
+        state = 0;
+        break;
+    }
+
+    threads.delay(50);
+  }
+
+  // now we are activated!
+  while (1) {
+    // mybe just end the thread instead of looping here?
+  }
+}
+
+
+
+/***********************************************************************************
+ * command processing thread
+ * receive a packet over debug radio, process it here
+ * only applies to test missions where receiving commands is applicable
+ */
+void command_thread(int inc) {
+  
+
+  
+}
+
+
+/***********************************************************************************
+ * Thermocouple manager thread
+ * keeps conversions happening as fast as possible  
+ * and updates a shared struct with new data
+ */
+void tc_thread(int inc) {
+  tcv_t mTcReadings; // for communicating with the TcInterface class
+  unsigned long lastData = safeMillis();
+
+  bool mNeedSleep = false;
+  bool mAct = false;
+  bool ret = false;
+  
+  safePrintln("TC: starting thread");
+
+  // don't pass go unless we can init the thermocouples
+  while( !ret ){
+    while( !spi_lock.lock(1000) );
+    ret = tc.enable();
+    spi_lock.unlock();
+  
+    if( ret ){
+      if(USBSERIAL_DEBUG) safePrintln("TC: INIT OK");
+    } else {
+      if(USBSERIAL_DEBUG) safePrintln("TC: INIT FAIL!!");
+    }
+  }
+
+  // main execution loop 
+  while(1) {
+    
+    // check if we need to prepare to sleep
+    safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+    if( mNeedSleep ){
+      if(USBSERIAL_DEBUG) safePrintln("TC: sleeping");
+      
+      while( !spi_lock.lock(1000) );
+      tc.disable();
+      spi_lock.unlock();
+      
+      // safely let the sleep thread know we are ready
+      while( !sr_tc_lock.lock(1000) );
+      sr_tc = true;
+      sr_tc_lock.unlock();
+
+      // now we are waiting to be put to sleep, and checking if we've woken up
+      while(1) {
+        safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+        // if we woke up, enable the TCs again
+        if( !mNeedSleep ){
+          if(USBSERIAL_DEBUG) safePrintln("TC: waking up");
+          while( !spi_lock.lock(1000) );
+          ret = tc.enable();
+          spi_lock.unlock();
+          if( ret ){
+            if(USBSERIAL_DEBUG) safePrintln("TC: successfully reconfigured TC chips");
+          } else {
+            if(USBSERIAL_DEBUG) safePrintln("TC: [ERROR] could not reconfigure TC chips!");
+          }
+          
+          // clear the sleep ready flag
+          while( !sr_tc_lock.lock(1000) );
+          sr_tc = false;
+          sr_tc_lock.unlock();
+          break;
+        }
+      }
+    }
+    
+    // NOW START TAKING  MEASUREMENTS
+    
+    // forceStart prevents TC read hangs if we havent gotten any data in 5 seconds
     bool forceStart = safeMillis() - lastData > 5000 ? true : false;
     if( forceStart ) lastData = safeMillis();
-    bool gotData = tc.read_all(vals, faults, forceStart);
+
+    // make call to TC interface
+    while( !spi_lock.lock(1000) );
+    //safePrintln(String(safeMillis())+ "  TC: mutex was unlocked, got it ");
+    bool gotData = tc.read_all(&mTcReadings, forceStart);
     spi_lock.unlock();
+    //safePrintln("TC: read vals");
 
     if( gotData ){
+      if(USBSERIAL_DEBUG) safePrintln("TC: got TC readings");
+      
       digitalWrite(LED_ACT, HIGH);
 
       unsigned long nn = safeMillis();  
 
-      tcdata_lock.lock(1000);
+      while( !tcdata_lock.lock(100) );
       if( tcdata_lock.getState() ){
         for( int i=0; i<TC_COUNT; i++ ){
-          tcdata.data[i] = vals[i];
+          safePrint("tc: ");
+          safePrintln(mTcReadings.data[i]);
+          tcdata.data[i] = mTcReadings.data[i];
         }
         tcdata.time = nn;
       }
       tcdata_lock.unlock();
-      
+
+
+
+      // check activation status
+      safeUpdate(&mAct, &activation, &act_lock);
+      if( !mAct ){
+        // check for activation conditions
+        int exceeds = 0;
+        for( int i=0; i<TC_COUNT; i++ ){
+          if( mTcReadings.data[i] >= TC_THRESHOLD ){
+            exceeds += 1;
+          }
+        }
+        if( exceeds >= TC_CONSENSUS ){
+          if(USBSERIAL_DEBUG) safePrintln("TC: DETECTED ACTIVATION");
+          // log this over radio too
+          mAct = true;
+          while( !act_lock.lock(1000) );
+          activation = true;
+          act_lock.unlock();
+        }
+      }
+
+      // TODO: log the data
+      // LOG THE DATA
+
 
       lastData = nn;
       digitalWrite(LED_ACT, LOW);
@@ -119,65 +823,128 @@ void tc_thread(int inc) {
   }
 }
 
-
-// simple radio thread takes thermocouple data every 5 seconds, builds a packet
-// and debugs the packet over ism radio
+/***********************************************************************************
+ * radio interface thread 
+ * publishes any debug messages and packets generated in other threads
+ * listens for command packets and dispatches them to command thread
+ */
 void radio_thread(int inc) {
+  bool ret = false;
   
-  while ( !spi_lock.lock() );
-  if( logNode.begin() ){
-    safePrintln("log node started");
-    analogWrite(LED_ISM_TX, 5);
-    logNode.setRetries(5);
-  } else {
-    safePrintln("log node failed to start");
-  }
+  while ( !spi_lock.lock(1000) );
+  ret = logNode.begin();
+  logNode.setRetries(1);
   spi_lock.unlock();
+  
+  if( ret ){
+    if(USBSERIAL_DEBUG) safePrintln("ISM: log node started");
+    analogWrite(LED_ISM_TX, 5); // dim lit 
+  } else {
+    if(USBSERIAL_DEBUG) safePrintln("ISM: log node failed to start, idling thread");
+    while(1) threads.delay(1000);
+  }
+
+  bool mNeedSleep = false;
 
   while(1) {
     threads.delay(5000);
 
+    safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+    if( mNeedSleep ){
+      if(USBSERIAL_DEBUG) safePrintln("ISM: sleeping");
+      safeAssign(&sr_radio, true, &sr_radio_lock);
+
+      while( mNeedSleep ){
+        safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+        if( !mNeedSleep ) {
+          if(USBSERIAL_DEBUG) safePrintln("ISM: waking up");
+          safeAssign(&sr_radio, false, &sr_radio_lock);
+        }
+        threads.delay(50);
+      }
+    }
+    
     // copy shared data into local vars
-    while( !tcdata_lock.lock() );
+    while( !tcdata_lock.lock(1000) );
     TcPacket *p = new TcPacket(tcdata.data, tcdata.time);
     tcdata_lock.unlock();
 
     // get SPI mutex and send packet over radio
-    safePrintln("* about to send ism packet");
-    spi_lock.lock(1000);
-    if( spi_lock.getState() ){
-      analogWrite(LED_ISM_TX, 100);
-      logNode.send(p, STATION_ADDRESS);
-      analogWrite(LED_ISM_TX, 5);
-      spi_lock.unlock();
-    }
+    if(USBSERIAL_DEBUG) safePrintln("ISM:  about to send ism packet");
+    analogWrite(LED_ISM_TX, 100);
+    
+    bool sent = false;
+    while( !sent ){
+      //if(USBSERIAL_DEBUG) safePrintln("  ISM: got mutex, sending...");
+      if(  spi_lock.lock(1000) ){
+        if( logNode.send(p, RH_BROADCAST_ADDRESS) ){
+          sent = true;
+        } 
+        spi_lock.unlock();
+        if( sent ){
+          if(USBSERIAL_DEBUG) safePrintln("sent");
+        } else {
+          if(USBSERIAL_DEBUG) safePrintln("failed");
+        }
+      }
+    }    
+    analogWrite(LED_ISM_TX, 5);
+
 
     delete p;
   }
 }
 
 
+/***********************************************************************************
+ * Telem gathering thread for board info 
+ */
+void telem_thread(int inc) {
+
+
+  while (1) {
+    
+  }
+}
+
 void iridium_thread(int inc) {
 
-  // Start the serial port connected to the satellite modem
-  IridiumSerial.begin(9600);
+  bool mAct = false;
 
-  safePrint("Powering on modem...");
+  // pre activation routine
+  while(1) {
+    // update the activation state
+    safeUpdate(&mAct, &activation, &act_lock);
+    
+    // if we are activated, break and move on
+    if( mAct ){
+      if(USBSERIAL_DEBUG) safePrintln("IRIDIUM: activation detected");
+      // debug this over radio log too
+      break;
+    }
+
+    threads.delay(100);
+  }
+
+  // now we are activated!
+  
+  // Start the serial port connected to the satellite modem
+  IRIDIUM_SERIAL.begin(9600);
+
+  if(USBSERIAL_DEBUG) safePrint("IRIDIUM: Powering on modem...");
   digitalWrite(PIN_IR_ENABLE, HIGH);
   analogWrite(LED_IR_ON, 5); // not blinding
   threads.delay(2000);
-  safePrintln("done.");
-
 
   // Begin satellite modem operation
-  safePrintln("Starting modem...");
+  if(USBSERIAL_DEBUG) safePrintln("IRIDIUM: Starting modem...");
   irerr = modem.begin();
   if (irerr != ISBD_SUCCESS)
   {
-    safePrint("Begin failed: error ");
-    safePrintln(irerr);
+    if(USBSERIAL_DEBUG) safePrint("IRIDIUM: Begin failed: error ");
+    if(USBSERIAL_DEBUG) safePrintln(irerr);
     if (irerr == ISBD_NO_MODEM_DETECTED)
-      safePrintln("No modem detected: check wiring.");
+      if(USBSERIAL_DEBUG) safePrintln("IRIDIUM: No modem detected: check wiring.");
     return;
   }
 
@@ -187,23 +954,23 @@ void iridium_thread(int inc) {
   irerr = modem.getSignalQuality(signalQuality);
   if (irerr != ISBD_SUCCESS)
   {
-    safePrint("SignalQuality failed: error ");
-    safePrintln(irerr);
+    if(USBSERIAL_DEBUG) safePrint("IRIDIUM: SignalQuality failed: error ");
+    if(USBSERIAL_DEBUG) safePrintln(irerr);
     //TODO: error handling
     //return;
   }
-  safePrint("On a scale of 0 to 5, signal quality is currently ");
-  safePrint(signalQuality);
+  if(USBSERIAL_DEBUG) safePrint("IRIDIUM: On a scale of 0 to 5, signal quality is currently ");
+  if(USBSERIAL_DEBUG) safePrint(signalQuality);
   if( signalQuality >= 0 && signalQuality <= 5 ){
     analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
   }
-  safePrintln(".");
 
   int cmd = 0;
   unsigned long curMillis = 0;
   unsigned long signalCheckInterval = 15000;
   unsigned long lastSignalCheck = safeMillis();
-  
+
+  // start main packet send loop
   while(1) {
     threads.delay(50);
 
@@ -220,25 +987,25 @@ void iridium_thread(int inc) {
     /////////////////////
     // PROCESS TEST SEND COMMAND
     /////////////////////
-    if( cmd == IR_SEND_TEST ){
+    if( cmd == CMDID_IR_TEST ){
       // Send the message
-      safePrintln("* sending test iridium message. This might take several minutes.\r\n");
+      safePrintln("IRIDIUM: sending test iridium message. This might take several minutes.\r\n");
       analogWrite(LED_IR_TX, 20);
       irerr = modem.sendSBDText("Hello, world!");
       analogWrite(LED_IR_TX, 0);
       if (irerr != ISBD_SUCCESS)
       {
-        safePrint("sendSBDText failed: error ");
-        safePrintln(irerr);
+        if(USBSERIAL_DEBUG) safePrint("IRIDIUM: sendSBDText failed: error ");
+        if(USBSERIAL_DEBUG) safePrintln(irerr);
         if (irerr == ISBD_SENDRECEIVE_TIMEOUT)
-          safePrintln("Try again with a better view of the sky.");
+          if(USBSERIAL_DEBUG) safePrintln("IRIDIUM: Try again with a better view of the sky.");
       }
     
       else
       {
-        safePrintln("*****************");
-        safePrintln("*** MESSAGE SENT *");
-        safePrintln("*****************");
+        if(USBSERIAL_DEBUG) safePrintln("*****************");
+        if(USBSERIAL_DEBUG) safePrintln("*** MESSAGE SENT *");
+        if(USBSERIAL_DEBUG) safePrintln("*****************");
 
         // clear command flag on success
         cmd = 0;
@@ -252,14 +1019,14 @@ void iridium_thread(int inc) {
     if( curMillis - lastSignalCheck > signalCheckInterval ){
       irerr = modem.getSignalQuality(signalQuality);
       if (irerr != ISBD_SUCCESS) {
-        safePrint("SignalQuality failed: error ");
+        if(USBSERIAL_DEBUG) safePrint("IRIDIUM: SignalQuality failed: error ");
         safePrintln(irerr);
         //TODO: error handling
         //return;
       } else {
-        safePrint("On a scale of 0 to 5, signal quality is currently ");
-        safePrint(signalQuality);
-        safePrintln(".");
+        if(USBSERIAL_DEBUG) safePrint("IRIDIUM: On a scale of 0 to 5, signal quality is currently ");
+        if(USBSERIAL_DEBUG) safePrint(signalQuality);
+        if(USBSERIAL_DEBUG) safePrintln(".");
         if( signalQuality >= 0 && signalQuality <= 5 ){
           analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
         }
@@ -274,39 +1041,82 @@ void iridium_thread(int inc) {
 void setup() {
   Serial.begin(115200);
 
+  // LED pin setup
   pinMode(LED_IR_ON, OUTPUT);
   pinMode(LED_IR_SIG, OUTPUT);
   pinMode(LED_IR_TX, OUTPUT);
   pinMode(LED_ISM_TX, OUTPUT);
   pinMode(LED_ACT, OUTPUT);
 
+  // iridium control pin setup
   digitalWrite(PIN_IR_ENABLE, LOW);
   pinMode(PIN_IR_ENABLE, OUTPUT);
+  pinMode(PIN_IRIDIUM_TX_ACT, INPUT);
+  pinMode(PIN_IRIDIUM_STATUS, INPUT);
+
+  // debug radio present (active high)
+  pinMode(PIN_ISM_PRESENT, INPUT);
+
+  // high g accel analog input config
+  analogReadAveraging(64);
+  analogReadResolution(12);
+  pinMode(PIN_ACC_X, INPUT);
+  pinMode(PIN_ACC_Y, INPUT);
+  pinMode(PIN_ACC_Z, INPUT);
+
+  // battery monitoring input config
+  // (charging/not charging and level)
+  pinMode(PIN_BAT_STAT, INPUT);
+  pinMode(PIN_BAT_SENSE, INPUT);
+
+  // config for IMU, start I2C bus and falling edge data ready interrupt pin 
+  //attachInterrupt(digitalPinToInterrupt(PIN_IMU_INT), imuISR, FALLING);
+  pinMode(PIN_IMU_INT, INPUT);
+  Wire.begin();
+  Wire.setClock(400000);
 
   delay(2000);
 
-  threads.addThread(tc_thread, 1);
-  threads.addThread(radio_thread, 1);
+  // start necessary threads
+  // the '1' argument has no purpose :)
+  // third arg is stack size (default is 1k)
+  threads.addThread(tc_thread,      1, 4096);
+  threads.addThread(acc_thread,     1);
+  threads.addThread(iridium_thread, 1, 4096);
+  threads.addThread(sd_thread,      1, 4096);
+  threads.addThread(telem_thread,   1);
+  threads.addThread(imu_thread,     1, 4096);
 
-  safePrintln("* starting iridium thread");
-  threads.addThread(iridium_thread, 1);
-  
-  //threads.setSliceMicros(500);
+  threads.addThread(sleep_thread,   1);
+
+  // start the radio thread if its powered on and enabled in config
+  if( ISM_DEBUG ){
+    if( digitalRead(PIN_ISM_PRESENT) ){
+      if(USBSERIAL_DEBUG) safePrintln("ISM: present");
+      debugRadioPresent = true;
+      threads.addThread(radio_thread, 1, 20000);
+    } else {
+      debugRadioPresent = false;
+      if(USBSERIAL_DEBUG) safePrintln("ISM: NOT PRESENT");
+    }
+  }
+
+  //threads.setSliceMillis(50);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
 
-  threads.delay(1000);
+  //.delay(1000);
 
-  ser_lock.lock();
-  char a = Serial.read();
-  ser_lock.unlock();
-
-  if( a == '1' ){
-    ircmd_lock.lock();
-    ircmd = 1;
-    ircmd_lock.unlock();
-  }
+//  ser_lock.lock();
+//  char a = Serial.read();
+//  ser_lock.unlock();
+//
+//  if( a == '1' ){
+//    ircmd_lock.lock();
+//    ircmd = 1;
+//    ircmd_lock.unlock();
+//  }
   
 }

@@ -24,21 +24,21 @@ public:
     digitalWrite(RFM69_RST, LOW);
     
     // manual reset
-    digitalWrite(RFM69_RST, HIGH);
-    delay(10);
-    digitalWrite(RFM69_RST, LOW);
-    delay(10);
+    //digitalWrite(RFM69_RST, HIGH);
+    //delay(10);
+    //digitalWrite(RFM69_RST, LOW);
+    //delay(10);
     
-    safePrintln("initialziing");
+    //safePrintln("initialziing");
     
     if (!rf69_manager.init()) {
-      safePrintln("RFM69 radio init failed");
+      //safePrintln("RFM69 radio init failed");
       return false;
     }
     
     safePrintln("Setting frequency");
     if (!rf69.setFrequency(RF69_FREQ)) {
-      safePrintln("setFrequency failed");
+      //safePrintln("setFrequency failed");
       return false;
     }
     
@@ -51,7 +51,7 @@ public:
                       0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
     rf69.setEncryptionKey(key);
     
-    safePrintln("Setup done");
+    //safePrintln("Setup done");
     return true;
   };
 
@@ -60,10 +60,10 @@ public:
     
     // Send a message to the DESTINATION!
     if (rf69_manager.sendtoWait((uint8_t *)data.c_str(), data.length()+1, addr)) {
-      safePrintln(" -> ack");
+      //safePrintln(" -> ack");
       return true;      
     } else {
-      safePrintln(" -> no ack");
+      //safePrintln(" -> no ack");
       return false;
     }
   }
@@ -73,7 +73,7 @@ public:
     
     // if the packet will fit in the send buffer
     if( p->size() >= RH_RF69_MAX_MESSAGE_LEN ){
-      safePrintln("sending super long messages not supported yet");
+      //safePrintln("sending super long messages not supported yet");
       return false;
     }
     
@@ -83,15 +83,15 @@ public:
     memcpy( &sendbuf[1], p->data(), p->size() );
     sbuflen = p->size() + 1;
     
-    safePrint("about to send");
-    safePrint(String(sbuflen));
-    safePrintln(" bytes");
+    //safePrint("about to send");
+    //safePrint(String(sbuflen));
+    //safePrintln(" bytes");
     
-    if (rf69_manager.sendtoWait(sendbuf, sbuflen, addr)) {
-      safePrintln(" -> sent");
+    if (rf69_manager.sendtoWait(sendbuf, sbuflen-1, addr)) {
+      //safePrintln(" -> sent");
       return true;      
     } else {
-      safePrintln(" -> failed (no ack)");
+      //safePrintln(" -> failed (no ack)");
       return false;
     }
     
