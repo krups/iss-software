@@ -18,12 +18,13 @@ extern void safePrint(String s);
 /****************************
 Packet types
 */
-#define PTYPE_TELEM        'M'
 #define PTYPE_ACCELSTATS   'A'
-#define PTYPE_TC           'T'
-#define PTYPE_ACCELSINGLE  'B'
-#define PTYPE_IMUSTATS     'I'
 #define PTYPE_COMMAND      'C'
+#define PTYPE_ACCEL        'B'
+#define PTYPE_TELEM        'M'
+#define PTYPE_IMU          'I'
+#define PTYPE_TC           'T'
+
 
 
 /************************************************************************************
@@ -89,7 +90,9 @@ typedef struct {
   float mx;
   float my;
   float mz;
+  unsigned long t;
 } imu_t;
+#define IMU_T_SIZE   40 // 9 * 4B + 4B
 
 // thermocouple data packet with fault conditions
 typedef struct {
@@ -182,11 +185,12 @@ public:
   TelemPacket(uint8_t *buf) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
     memcpy(_data, buf, _size);
   }
-  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
+  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
     *(unsigned long*)(&_data[0]) = t;
     *(float*)(&_data[4])         = batt;
     *(float*)(&_data[8])         = tc1_temp;
     *(float*)(&_data[12])        = tc2_temp;
+    *(uint8_t*)(&_data[16])      = ir_sig;
   }
   
   String toString() { return toString(false); }
@@ -194,9 +198,9 @@ public:
   String toString(bool with_timestamp) {
     String a;
     if( with_timestamp ){
-      a = String(t()) + "\t";
+      a = String(t()) + ",";
     }
-    a += String(batt()) + "\t" + String(tc1_temp()) + "\t" + String(tc2_temp()) + "\t" + String(ir_sig());
+    a += String(batt()) + "," + String(tc1_temp()) + "," + String(tc2_temp()) + "," + String(ir_sig());
     
     return a;
   }
@@ -205,17 +209,17 @@ public:
   float batt(){return *((float*)&_data[4]);}
   float tc1_temp(){return *((float*)&_data[8]);}
   float tc2_temp(){return *((float*)&_data[12]);}
-  uint8_t ir_sig(){return _data[16]; }
+  uint8_t ir_sig(){return ((uint8_t)_data[16]); }
 };
 
 // once accel sample
 class AccPacket : public Packet {
 public:
-  AccPacket(uint8_t *buf) : Packet( PTYPE_ACCELSINGLE, ACC_T_SIZE ) {
+  AccPacket(uint8_t *buf) : Packet( PTYPE_ACCEL, ACC_T_SIZE ) {
     memcpy(_data, buf, _size);
   }
   
-  AccPacket(uint16_t x, uint16_t y, uint16_t z, unsigned long t) : Packet( PTYPE_ACCELSINGLE, ACC_T_SIZE ) {
+  AccPacket(uint16_t x, uint16_t y, uint16_t z, unsigned long t) : Packet( PTYPE_ACCEL, ACC_T_SIZE ) {
     *(unsigned long*)(&_data[0]) = t;
     *(uint16_t*)(&_data[4])      = x;
     *(uint16_t*)(&_data[6])      = y;
@@ -227,9 +231,9 @@ public:
   String toString(bool with_timestamp) {
     String a;
     if( with_timestamp ){
-      a = String(t()) + "\t";
+      a = String(t()) + ",";
     }
-    a += String(x()) + "\t" + String(y()) + "\t" + String(z());
+    a += String(x()) + "," + String(y()) + "," + String(z());
     return a;
   }
 
@@ -267,9 +271,9 @@ public:
   String toString(bool with_timestamp) {
     String a;
     if( with_timestamp ){
-      a = String(tmin()) + "\t" + String(tmax());
+      a = String(tmin()) + "," + String(tmax());
     }
-    a += String(x_min()) + "\t" + String(x_max()) + "\t" + String(y_min()) + "\t" + String(y_max()) + "\t" + String(z_min()) +" \t" + String(z_max());
+    a += String(x_min()) + "," + String(x_max()) + "," + String(y_min()) + "," + String(y_max()) + "," + String(z_min()) +" \t" + String(z_max());
     
     return a;
   }
@@ -304,10 +308,10 @@ public:
   String toString(bool with_timestamp) {
     String a;
     if( with_timestamp ){
-      a = String(time()) + "\t";
+      a = String(time()) + ",";
     }
     for( int i=0; i < TC_COUNT; i++ ){
-      a += String(data()[i]) + ((i==TC_COUNT-1) ? "" : "\t");
+      a += String(data()[i]) + ((i==TC_COUNT-1) ? "" : ",");
     }
     
     return a;
@@ -316,6 +320,29 @@ public:
 
   float* data(){ return (float *)_data; }
   unsigned long time(){return *((unsigned long*)&_data[4*TC_COUNT]);}
+};
+
+// IMU packet
+class IMUPacket : public Packet {
+public:
+  IMUPacket(float ax, float ay, float az, 
+            float gx, float gy, float gz, 
+            float mx, float my, float mz, 
+            unsigned long t) : Packet(PTYPE_IMU, IMU_T_SIZE) {    
+    *(float*)(&_data[0]) = ax;
+    *(float*)(&_data[4]) = ay;
+    *(float*)(&_data[8]) = az;
+    *(float*)(&_data[12]) = gx;
+    *(float*)(&_data[16]) = gy;
+    *(float*)(&_data[20]) = gz;
+    *(float*)(&_data[24]) = mx;
+    *(float*)(&_data[28]) = my;
+    *(float*)(&_data[32]) = mz;
+    *(unsigned long*)(&_data[36]) = t;
+  } 
+  IMUPacket(uint8_t *buf) : Packet(PTYPE_IMU, IMU_T_SIZE) {  
+    memcpy(_data, buf, _size);
+  }
 };
 
 // iridium packet class

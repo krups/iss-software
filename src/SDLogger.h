@@ -241,7 +241,7 @@ private:
   }
 
   bool _ready, _open[MAX_OPEN_FILES];
-  int _logNum;
+  uint8_t _logNum;
   
   String _fnames[MAX_OPEN_FILES];
   File _fh;

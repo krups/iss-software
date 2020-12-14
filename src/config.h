@@ -62,7 +62,7 @@
 // ground trial setup for the capsule with JSC TPS 
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_JSC)
-  #define USBSERIAL_DEBUG      1
+  #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            1
   #define TC_COUNT             5
   #define TC_THRESHOLD         1700.0 // degrees celcius
@@ -103,5 +103,21 @@
 
 #define ACC_FS
 #define ACC_BUFFER_SAMPLES
+
+/************************************************************************************************
+* battery voltage calibration
 */
+#define VBAT_CAL                0
+#define KREPE_ADC_RES           12
+
+
+/************************************************************************************************
+* queue size control (applies to both ISM debug and SD log. 
+*/
+#define MAX_TCQ_SIZE            5
+#define MAX_ACCQ_SIZE           10
+#define MAX_IMUQ_SIZE           10
+#define MAX_TELEMQ_SIZE         10
+
+
 #endif

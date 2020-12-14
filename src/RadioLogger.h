@@ -87,7 +87,7 @@ public:
     //safePrint(String(sbuflen));
     //safePrintln(" bytes");
     
-    if (rf69_manager.sendtoWait(sendbuf, sbuflen-1, addr)) {
+    if (rf69_manager.sendtoWait(sendbuf, sbuflen, addr)) {
       //safePrintln(" -> sent");
       return true;      
     } else {
@@ -145,7 +145,7 @@ public:
           num_packets++;
           i += TC_T_SIZE + 1;
           break;
-        case PTYPE_ACCELSINGLE:
+        case PTYPE_ACCEL:
           num_packets++;
           i += ACC_T_SIZE + 1;
           break;
@@ -153,8 +153,9 @@ public:
           num_packets++;
           i += CMD_T_SIZE + 1;
           break;
-        case PTYPE_IMUSTATS:
-          safePrintln("got IMU_STATS packet, dont know what to do ,,,");
+        case PTYPE_IMU:
+          num_packets++;
+          i += IMU_T_SIZE + 1;
           break;
         default:
           safePrintln("ERAWR: lost track of what packet was which n where n what not");
@@ -165,8 +166,8 @@ public:
       }
     }
     
-    safePrint("received "); safePrint(String(num_packets)); safePrint(" packets, ");
-    safePrint("   i="); safePrint(String(i)); safePrint(", len="); safePrintln(String(len));
+    //safePrint("received "); safePrint(String(num_packets)); safePrint(" packets, ");
+    //safePrint("   i="); safePrint(String(i)); safePrint(", len="); safePrintln(String(len));
     
     
     
@@ -183,7 +184,7 @@ public:
       // telemetry packet
       if( recvbuf[idx] == PTYPE_TELEM ){
         safePrintln("got TELEM packet");
-        pbuf[pcount] = new AccPacket(&recvbuf[idx+1]);
+        pbuf[pcount] = new TelemPacket(&recvbuf[idx+1]);
         pcount++;
         idx += TELEM_T_SIZE+1;
       } 
@@ -206,11 +207,19 @@ public:
       } 
       
       // singe timestamped high g accelerometer reading
-      else if( recvbuf[idx] == PTYPE_ACCELSINGLE ){
+      else if( recvbuf[idx] == PTYPE_ACCEL ){
         safePrintln("got ACCEL packet");
         pbuf[pcount] = new AccPacket(&recvbuf[idx+1]);
         pcount++;
         idx += ACC_T_SIZE+1;
+      } 
+      
+      // singe timestamped imu reading
+      else if( recvbuf[idx] == PTYPE_IMU ){
+        safePrintln("got IMU packet");
+        pbuf[pcount] = new IMUPacket(&recvbuf[idx+1]);
+        pcount++;
+        idx += IMU_T_SIZE+1;
       } 
       
       // COMMAND PACKET WOOHOO
@@ -229,17 +238,17 @@ public:
     }
     
     if( pcount == num_packets ){
-      safePrintln(" --> parsed all packets");
+      //safePrintln(" --> parsed all packets");
     }
     
   }
 
   void printPackets() {
-    safePrintln("*** printing packet...");
+    //safePrintln("*** printing packet...");
     for( int i=0; i<pcount; i++ ){
-      safePrintln(pbuf[i]->toString());
+      safePrintln(pbuf[i]->toString(true));
     }
-    safePrintln("done");
+    //safePrintln("done");
   }
   
   void deletePackets() {
