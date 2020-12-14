@@ -108,7 +108,6 @@
 * battery voltage calibration
 */
 #define VBAT_CAL                0
-#define KREPE_ADC_RES           12
 
 
 /************************************************************************************************

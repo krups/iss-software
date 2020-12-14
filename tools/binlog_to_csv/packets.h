@@ -38,7 +38,7 @@ typedef struct {
 
 // board telemetry packet
 typedef struct {
-  unsigned long t;          // 4B, timestamp
+  uint32_t t;          // 4B, timestamp
   float batt;               // 4B, battery voltage
   float tc1_temp;           // 4B, TC converter 1 cold junction temperature
   float tc2_temp;           // 4B, TC converter 2 cold junction temperature
@@ -48,8 +48,8 @@ typedef struct {
 
 // high g accel stats packet
 typedef struct {
-  unsigned long tmin;  // 4B
-  unsigned long tmax;  // 4B
+  uint32_t tmin;  // 4B
+  uint32_t tmax;  // 4B
   uint16_t x_min;      // 2B
   uint16_t x_max;      // 2B   
   uint16_t y_min;      // 2B
@@ -62,13 +62,13 @@ typedef struct {
 // thermocouple measurement packet
 typedef struct {
   float data[TC_COUNT];  // tc measurements, 4 * TC_COUNT bytes
-  unsigned long time;       // in ms
+  uint32_t time;       // in ms
 } tc_t;
 #define TC_T_SIZE    (4*TC_COUNT) + 4 // just enough for data, not including struct padding
 
 // high g accel data, one x/y/z sample
 typedef struct {
-  unsigned long t; // 4B
+  uint32_t t; // 4B
   uint16_t x;      // 2B
   uint16_t y;      // 2B 
   uint16_t z;      // 2B
@@ -86,7 +86,7 @@ typedef struct {
   float mx;
   float my;
   float mz;
-  unsigned long t;
+  uint32_t t;
 } imu_t;
 #define IMU_T_SIZE   40 // 9 * 4B + 4B
 
@@ -110,9 +110,7 @@ public:
     _data = new uint8_t[size];
   }
   ~Packet() { delete _data; }
-  
-  virtual String toString () {};
-  virtual String toString (bool timestamp) {};
+
   char type() const { return _type; }
   int size() const { return _size; }
   uint8_t* data() const { return _data; }
@@ -153,12 +151,6 @@ public:
     memset(&_data[2], 0, NUM_CMD_PAYLOAD_BYTES + 1);
   }
   
-  String toString() {
-    String a;
-    a += "CMD ID: " + String(cmd()) + ", ARG ID: " + String(args());
-    
-    return a;
-  }
   uint8_t cmd() { return _data[0]; }
   uint8_t args() { return _data[1]; }
   uint8_t* payload() { return &_data[3]; }
@@ -181,27 +173,15 @@ public:
   TelemPacket(uint8_t *buf) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
     memcpy(_data, buf, _size);
   }
-  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
-    *(unsigned long*)(&_data[0]) = t;
+  TelemPacket(uint32_t t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
+    *(uint32_t*)(&_data[0])      = t;
     *(float*)(&_data[4])         = batt;
     *(float*)(&_data[8])         = tc1_temp;
     *(float*)(&_data[12])        = tc2_temp;
     *(uint8_t*)(&_data[16])      = ir_sig;
   }
   
-  String toString() { return toString(false); }
-  
-  String toString(bool with_timestamp) {
-    String a;
-    if( with_timestamp ){
-      a = String(t()) + ", ";
-    }
-    a += String(batt()) + ", " + String(tc1_temp()) + ", " + String(tc2_temp()) + ", " + String(ir_sig());
-    
-    return a;
-  }
-  
-  unsigned long t(){return *((unsigned long*)&_data[0]);}
+  uint32_t t(){return *((uint32_t*)&_data[0]);}
   float batt(){return *((float*)&_data[4]);}
   float tc1_temp(){return *((float*)&_data[8]);}
   float tc2_temp(){return *((float*)&_data[12]);}
@@ -215,25 +195,14 @@ public:
     memcpy(_data, buf, _size);
   }
   
-  AccPacket(uint16_t x, uint16_t y, uint16_t z, unsigned long t) : Packet( PTYPE_ACCEL, ACC_T_SIZE ) {
-    *(unsigned long*)(&_data[0]) = t;
+  AccPacket(uint16_t x, uint16_t y, uint16_t z, uint32_t t) : Packet( PTYPE_ACCEL, ACC_T_SIZE ) {
+    *(uint32_t*)(&_data[0])      = t;
     *(uint16_t*)(&_data[4])      = x;
     *(uint16_t*)(&_data[6])      = y;
     *(uint16_t*)(&_data[8])      = z;
   }
 
-  String toString() { return toString(false); }
-
-  String toString(bool with_timestamp) {
-    String a;
-    if( with_timestamp ){
-      a = String(t()) + ", ";
-    }
-    a += String(x()) + ", " + String(y()) + ", " + String(z());
-    return a;
-  }
-
-  unsigned long t(){return *((unsigned long*)&_data[0]);}
+  uint32_t t(){return *((uint32_t*)&_data[0]);}
   uint16_t x(){return *((uint16_t*)&_data[4]);}
   uint16_t y(){return *((uint16_t*)&_data[6]);}
   uint16_t z(){return *((uint16_t*)&_data[8]);}
@@ -247,13 +216,13 @@ public:
   }
   
   AccStatsPacket(
-      unsigned long tmin, unsigned long tmax,
+      uint32_t tmin, uint32_t tmax,
       uint16_t x_min, uint16_t x_max,
       uint16_t y_min, uint16_t y_max,
       uint16_t z_min, uint16_t z_max) : 
       Packet(PTYPE_ACCELSTATS, ACC_STAT_T_SIZE){
-    *(unsigned long*)(&_data[0]) = tmin;
-    *(unsigned long*)(&_data[4]) = tmax;
+    *(uint32_t*)(&_data[0]) = tmin;
+    *(uint32_t*)(&_data[4]) = tmax;
     *(uint16_t*)(&_data[8]) = x_min;
     *(uint16_t*)(&_data[10]) = x_max;
     *(uint16_t*)(&_data[12]) = y_min;
@@ -262,20 +231,9 @@ public:
     *(uint16_t*)(&_data[18]) = z_max;
   }
   
-  String toString() { return toString(false); }
   
-  String toString(bool with_timestamp) {
-    String a;
-    if( with_timestamp ){
-      a = String(tmin()) + ", " + String(tmax());
-    }
-    a += String(x_min()) + ", " + String(x_max()) + ", " + String(y_min()) + ", " + String(y_max()) + ", " + String(z_min()) +", " + String(z_max());
-    
-    return a;
-  }
-  
-  unsigned long tmin(){return *((unsigned long*)&_data[0]);}
-  unsigned long tmax(){return *((unsigned long*)&_data[4]);}
+  uint32_t tmin(){return *((uint32_t*)&_data[0]);}
+  uint32_t tmax(){return *((uint32_t*)&_data[4]);}
   uint16_t x_min(){return *((uint16_t*)&_data[8]);}
   uint16_t x_max(){return *((uint16_t*)&_data[10]);}
   uint16_t y_min(){return *((uint16_t*)&_data[12]);}
@@ -291,30 +249,15 @@ public:
     memcpy(_data, buf, _size);
   }
   
-  TcPacket(float* data, unsigned long time) : Packet(PTYPE_TC, TC_T_SIZE){
+  TcPacket(float* data, uint32_t time) : Packet(PTYPE_TC, TC_T_SIZE){
     for(int i = 0; i < TC_COUNT; i++){
       ((float*)_data)[i] = data[i];
     }
-    *(unsigned long*)(&_data[4*TC_COUNT]) = time;
+    *(uint32_t*)(&_data[4*TC_COUNT]) = time;
   }
-
-  String toString() { return toString(false); }
-  
-  String toString(bool with_timestamp) {
-    String a;
-    if( with_timestamp ){
-      a = String(time()) + ", ";
-    }
-    for( int i=0; i < TC_COUNT; i++ ){
-      a += String(data()[i]) + ((i==TC_COUNT-1) ? "" : ", ");
-    }
-    
-    return a;
-  }
-
 
   float* data(){ return (float *)_data; }
-  unsigned long time(){return *((unsigned long*)&_data[4*TC_COUNT]);}
+  uint32_t time(){return *((uint32_t*)&_data[4*TC_COUNT]);}
 };
 
 // IMU packet
@@ -323,7 +266,7 @@ public:
   IMUPacket(float ax, float ay, float az, 
             float gx, float gy, float gz, 
             float mx, float my, float mz, 
-            unsigned long t) : Packet(PTYPE_IMU, IMU_T_SIZE) {    
+            uint32_t t) : Packet(PTYPE_IMU, IMU_T_SIZE) {    
     *(float*)(&_data[0]) = ax;
     *(float*)(&_data[4]) = ay;
     *(float*)(&_data[8]) = az;
@@ -333,7 +276,7 @@ public:
     *(float*)(&_data[24]) = mx;
     *(float*)(&_data[28]) = my;
     *(float*)(&_data[32]) = mz;
-    *(unsigned long*)(&_data[36]) = t;
+    *(uint32_t*)(&_data[36]) = t;
   } 
   IMUPacket(uint8_t *buf) : Packet(PTYPE_IMU, IMU_T_SIZE) {  
     memcpy(_data, buf, _size);

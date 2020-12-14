@@ -272,15 +272,7 @@ bool imuInit() {
       initialized = true;
     }
 
-//    // software reset for known state
-//    while ( !i2c_lock.lock(100) );
-//    myICM.swReset( );
-//    if ( myICM.status != ICM_20948_Stat_Ok) {
-//      //safePrintln("IMU: software reset upon init failed");
-//      initialized = false;
-//    }
-//    i2c_lock.unlock();
-
+    // make sure we are not sleeping
     imuWake();
 
     // Set full scale range struct for both acc and gyr
@@ -293,11 +285,7 @@ bool imuInit() {
       //safePrintln("IMU: failed to set full scale range");
       initialized = false;
     }
-//    myICM.setSampleMode( (ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), ICM_20948_Sample_Mode_Continuous );
-//    if ( myICM.status != ICM_20948_Stat_Ok) {
-//      safePrintln("IMU: failed to set sample mode");
-//      initialized = false;
-//    }
+
     ICM_20948_smplrt_t mySmplrt;
     // this is 4.4 hz output data rate for the imu
     // calculate datarate with 1125 / (1+ODR) in Hz
@@ -305,24 +293,10 @@ bool imuInit() {
     mySmplrt.g = 255;
     myICM.setSampleRate( (ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), mySmplrt );
     if ( myICM.status != ICM_20948_Stat_Ok) {
-      safePrintln("IMU:failed to set sample rate");
+      //safePrintln("IMU:failed to set sample rate");
       initialized = false;
     }
 
-    // configure interrupts to drive the line low when raw data is ready
-    //myICM.cfgIntActiveLow(true);
-    //myICM.cfgIntOpenDrain(false);
-    //myICM.cfgIntLatch(true);
-    //if ( myICM.status != ICM_20948_Stat_Ok) {
-    //  safePrintln("IMU: failed to set interrupt logic level");
-    //  initialized = false;
-    //}
-//    myICM.intEnableRawDataReady(true);
-//    if ( myICM.status != ICM_20948_Stat_Ok) {
-//      safePrintln("IMU: failed to set interrupt source");
-//      initialized = false;
-//    }
-    
     i2c_lock.unlock();
   }
   return initialized;
@@ -363,7 +337,7 @@ void imu_thread(int inc) {
     // check if we need to prepare to sleep
     safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
     if ( mNeedSleep ) {
-      safePrintln("IMU: sleeping");
+      if (USBSERIAL_DEBUG) safePrintln("IMU: sleeping");
       imuSleep();
 
       // safely let the sleep thread know we are ready
@@ -376,7 +350,7 @@ void imu_thread(int inc) {
         safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
         // if we woke up, reconfigure the IMU
         if ( !mNeedSleep ) {
-          safePrintln("IMU: waking up");
+          if (USBSERIAL_DEBUG) safePrintln("IMU: waking up");
           imuWake();
 
           // clear the sleep ready flag
@@ -393,7 +367,6 @@ void imu_thread(int inc) {
     bool gotData = false;
     while ( !i2c_lock.lock(100) );
     if ( myICM.dataReady() ) {
-      //safePrintln("$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$");
       myICM.getAGMT();      // The values are only updated when you call 'getAGMT'
       ax = myICM.accX();
       ay = myICM.accY();
@@ -544,7 +517,7 @@ void sd_thread(int inc) {
     // check if we need to prepare to sleep
     safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
     if ( mNeedSleep ) {
-      safePrintln("SD: sleeping");
+      if (USBSERIAL_DEBUG) safePrintln("SD: sleeping");
 
       // safely let the sleep thread know we are ready
       while ( !sr_sd_lock.lock(1000) );
@@ -556,7 +529,7 @@ void sd_thread(int inc) {
         safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
         // if we woke up, reconfigure the IMU
         if ( !mNeedSleep ) {
-          safePrintln("SD: waking up");
+          if (USBSERIAL_DEBUG) safePrintln("SD: waking up");
 
 
           // clear the sleep ready flag
@@ -622,7 +595,7 @@ void sd_thread(int inc) {
     // imu packet logging
     if ( imuq_lock.lock() ){
       if ( imuq_count > 0 ) {
-        safePrintln("got imu packet to log to SD");
+        if (USBSERIAL_DEBUG) safePrintln("got imu packet to log to SD");
         // have to get non volatile pointer to the memory or 
         // the Packet constructor complains
         p = new IMUPacket(imudataq[imuq_read]->data());
@@ -716,7 +689,7 @@ void sleep_thread(int inc) {
        ss_imu   = false,
        ss_ir    = false;
 
-  safePrintln("SLEEP: starting sleep thread");
+  if (USBSERIAL_DEBUG) safePrintln("SLEEP: starting sleep thread");
 
   threads.delay(10000);
 
@@ -729,7 +702,7 @@ void sleep_thread(int inc) {
     // check activation status
     safeUpdate(&mAct, &activation, &act_lock);
     if ( mAct ) {
-      safePrintln("SLEEP: DETECTED ACTIVATION");
+      if (USBSERIAL_DEBUG) safePrintln("SLEEP: DETECTED ACTIVATION");
       break;
     }
 
@@ -744,7 +717,7 @@ void sleep_thread(int inc) {
         while ( !ns_lock.lock(10) );
         needSleep = 1;
         ns_lock.unlock();
-        safePrintln("SLEEP: requesting threads prepare for sleep");
+        if (USBSERIAL_DEBUG) safePrintln("SLEEP: requesting threads prepare for sleep");
         state = 1;
         break;
 
@@ -768,7 +741,7 @@ void sleep_thread(int inc) {
 
         // if all the threads are ready to sleep
         if ( ss_tc && ss_imu && ss_radio) {
-          safePrintln("SLEEP: all threads acknowledged request for sleep, proceeding");
+          if (USBSERIAL_DEBUG) safePrintln("SLEEP: all threads acknowledged request for sleep, proceeding");
           state = 2;
         }
         break;
@@ -783,7 +756,7 @@ void sleep_thread(int inc) {
         needSleep = 0;
         ns_lock.unlock();
 
-        safePrintln("SLEEP: WOKE UP AND SET NEED SLEEP = 0");
+        if (USBSERIAL_DEBUG) safePrintln("SLEEP: WOKE UP AND SET NEED SLEEP = 0");
 
         // back to needing sleep
         state = 0;
@@ -826,7 +799,7 @@ void tc_thread(int inc) {
   bool mAct = false;
   bool ret = false;
 
-  safePrintln("TC: starting thread");
+  if (USBSERIAL_DEBUG) safePrintln("TC: starting thread");
 
   // don't pass go unless we can init the thermocouples
   while ( !ret ) {
@@ -927,7 +900,7 @@ void tc_thread(int inc) {
       // push packet into tc data queue to be logged
       while ( !tcq_lock.lock(100) ); // get lock for telem packet log queue
       if ( tcq_count + 1 < MAX_TCQ_SIZE ) {
-        safePrintln("creating tc packet ");
+        if (USBSERIAL_DEBUG) safePrintln("creating tc packet ");
         tcdataq[tcq_write] = new TcPacket(mTcReadings.data, nn);
         tcq_write = (tcq_write + 1) % MAX_TCQ_SIZE;
         tcq_count += 1;
@@ -939,7 +912,7 @@ void tc_thread(int inc) {
       if( ISM_DEBUG && logen_tc){
         while ( !logtcq_lock.lock(100) ); // get lock for telem packet log queue
         if ( logtcq_count + 1 < MAX_TCQ_SIZE ) {
-          safePrintln("creating radio tc packet ");
+          if (USBSERIAL_DEBUG) safePrintln("creating radio tc packet ");
           logtcdataq[logtcq_write] = new TcPacket(mTcReadings.data, nn);
           logtcq_write = (logtcq_write + 1) % MAX_TCQ_SIZE;
           logtcq_count += 1;
@@ -1120,7 +1093,7 @@ void telem_thread(int inc) {
     // vbat is split through two 100k resistors and connected to PIN_BAT_SENSE
     // resoltution configurable
     batt = analogRead( PIN_BAT_SENSE ); //PIN_BAT_SENSE
-    vbat = ((float)(batt)) / 1023.0;
+    vbat = ((float)(batt+VBAT_CAL)) / 1023.0;
     vbat = vbat * 3.3 * 2;
     
 
@@ -1129,7 +1102,6 @@ void telem_thread(int inc) {
 
     while ( !telemq_lock.lock(100) ); // get lock for telem packet log queue
     if ( telemq_count + 1 < MAX_TELEMQ_SIZE ) {
-      safePrintln("creating telem packet " + String(batt) + " " + String(vbat));
       telemdataq[telemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, (uint8_t)0);  // TODO: fill in tc1 and tc2 temp and irsig
       telemq_write = (telemq_write + 1) % MAX_TELEMQ_SIZE;
       telemq_count += 1;
@@ -1139,7 +1111,6 @@ void telem_thread(int inc) {
     if( ISM_DEBUG  && logen_telem ){
       while ( !logtelemq_lock.lock(100) ); // get lock for telem packet log queue
       if ( logtelemq_count + 1 < MAX_TELEMQ_SIZE ) {
-        //safePrintln("creating ism telem packet " + String(batt) + " " + String(vbat));
         logtelemdataq[logtelemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, (uint8_t)0);  // TODO: fill in tc1 and tc2 temp and irsig
         logtelemq_write = (logtelemq_write + 1) % MAX_TELEMQ_SIZE;
         logtelemq_count += 1;
@@ -1242,7 +1213,7 @@ void iridium_thread(int inc) {
     /////////////////////
     if ( cmd == CMDID_IR_TEST ) {
       // Send the message
-      safePrintln("IRIDIUM: sending test iridium message. This might take several minutes.\r\n");
+      if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending test iridium message. This might take several minutes.\r\n");
       //analogWrite(LED_IR_TX, 20);
       irerr = modem.sendSBDText("Hello, world!");
       analogWrite(LED_IR_TX, 0);
@@ -1273,7 +1244,7 @@ void iridium_thread(int inc) {
       irerr = modem.getSignalQuality(signalQuality);
       if (irerr != ISBD_SUCCESS) {
         if (USBSERIAL_DEBUG) safePrint("IRIDIUM: SignalQuality failed: error ");
-        safePrintln(irerr);
+        if (USBSERIAL_DEBUG) safePrintln(irerr);
         //TODO: error handling
         //return;
       } else {

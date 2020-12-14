@@ -73,7 +73,7 @@ public:
     
     // create filename and try to open file
     String fname;
-    fname += (logtag + String(_logNum));
+    fname += (String(_logNum) + logtag);
     if( fname.length() > 8 ){
       safePrint("SDLOG: need shorter name");
     }

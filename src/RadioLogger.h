@@ -108,9 +108,9 @@ public:
 
         rbuflen = len;
 
-        safePrint("got "); safePrint(String(len)); safePrint(" bytes");
-        safePrint(" from "); safePrint(String(lastFrom)); safePrint(", to="); safePrint(String(to));
-        safePrint(", id="); safePrint(String(id)); safePrint(", flags = "); safePrintln(String(flags));
+        //safePrint("got "); safePrint(String(len)); safePrint(" bytes");
+        //safePrint(" from "); safePrint(String(lastFrom)); safePrint(", to="); safePrint(String(to));
+        //safePrint(", id="); safePrint(String(id)); safePrint(", flags = "); safePrintln(String(flags));
     
         // turn them into packets
         decodePackets(rbuflen);

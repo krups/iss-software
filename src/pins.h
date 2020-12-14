@@ -49,7 +49,7 @@
   #define RFM69_INT     29
   #define RFM69_RST     28
 #else
-#error "Unsupported target device for radio pin config, plz fix RadioLogger.h"
+#warning "Unsupported target device for radio pin config, plz fix RadioLogger.h"
 #endif
 
 
