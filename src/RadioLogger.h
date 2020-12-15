@@ -8,7 +8,7 @@
 #define CAPSULE_ADDRESS               2
 #define STATION_ADDRESS               1
 #define RF69_FREQ                     915.0
-#define PACKET_BUFFER_NUM_PACKETS     50
+#define PACKET_BUFFER_NUM_PACKETS     5
 #define SEND_BUF_SIZE                 RH_RF69_MAX_MESSAGE_LEN
 #define RECV_BUF_SIZE                 2*RH_RF69_MAX_MESSAGE_LEN
 
@@ -17,7 +17,7 @@ extern void safePrint(String s);
 
 class RadioLogger {
 public:
-  RadioLogger() : sbuflen(0), rbuflen(0), rssi(0), lastFrom(0), pcount(0) {};
+  RadioLogger() : sbuflen(0), rssi(0), lastFrom(0), pcount(0) {};
   
   bool begin() {
     pinMode(RFM69_RST, OUTPUT);
@@ -99,75 +99,77 @@ public:
   }
   
   bool receivePackets() {
-    //if( available() ){
-      
-      uint8_t to, id, flags, len;
-      
-      if (rf69_manager.recvfromAck(recvbuf, &len, &lastFrom, &to, &id, &flags)) {
-        rssi = rf69.lastRssi();
-
-        rbuflen = len;
-
-        //safePrint("got "); safePrint(String(len)); safePrint(" bytes");
-        //safePrint(" from "); safePrint(String(lastFrom)); safePrint(", to="); safePrint(String(to));
-        //safePrint(", id="); safePrint(String(id)); safePrint(", flags = "); safePrintln(String(flags));
+    uint8_t to, id, flags, len;
     
-        // turn them into packets
-        decodePackets(rbuflen);
-        
-        return true;
-      } else {
-        safePrintln("receive failed");
-        return false;
-      }
-    //} else {
-    //  return false;
-    //}
+    if( rf69_manager.recvfromAck(recvbuf, &len, &lastFrom, &to, &id, &flags) ){
+      rssi = rf69.lastRssi();
+
+      rbuflen = len;
+
+      //delay(500);
+      safePrint("got "); safePrint(String(len)); safePrint(" bytes of ");
+      safePrint(" from "); safePrint(String(lastFrom)); safePrint(", to="); safePrint(String(to));
+      safePrint(", id="); safePrint(String(id)); safePrint(", flags = "); safePrintln(String(flags));
+  
+      // turn them into packets
+      //decodePackets(rbuflen);
+      
+      return true;
+    } else {
+      safePrintln("receive failed");
+      rbuflen = 0;
+      return false;
+    }
   }
   
-  void decodePackets(uint8_t len) {    
+  void decodePackets() {    
+    if( rbuflen == 0) return;
+  
     // detect number of packets containted in buffer
     int num_packets = 0;
     
     int i = 0;
     
-    for( i=0; i<len; i++ ){
+    //safePrint("decodePackets() len= ");
+    //safePrintln(String(rbuflen));
+    
+    for( i=0; i<rbuflen; i++ ){
       switch(recvbuf[i]){
         case PTYPE_TELEM:
           num_packets++;
-          i += TELEM_T_SIZE + 1;
+          i += TELEM_T_SIZE;
           break;
         case PTYPE_ACCELSTATS:
           num_packets++;
-          i += ACC_STAT_T_SIZE + 1;
+          i += ACC_STAT_T_SIZE;
           break;
         case PTYPE_TC:
           num_packets++;
-          i += TC_T_SIZE + 1;
+          i += TC_T_SIZE;
           break;
         case PTYPE_ACCEL:
           num_packets++;
-          i += ACC_T_SIZE + 1;
+          i += ACC_T_SIZE;
           break;
         case PTYPE_COMMAND:
           num_packets++;
-          i += CMD_T_SIZE + 1;
+          i += CMD_T_SIZE;
           break;
         case PTYPE_IMU:
           num_packets++;
-          i += IMU_T_SIZE + 1;
+          i += IMU_T_SIZE;
           break;
         default:
           safePrintln("ERAWR: lost track of what packet was which n where n what not");
       }
       
-      if( i > len ){
-        safePrint("expecting another "); safePrintln(String(i-len));
+      if( i > rbuflen ){
+        safePrint("expecting another "); safePrintln(String(i-rbuflen));
       }
     }
     
     //safePrint("received "); safePrint(String(num_packets)); safePrint(" packets, ");
-    //safePrint("   i="); safePrint(String(i)); safePrint(", len="); safePrintln(String(len));
+    //safePrint("   i="); safePrint(String(i)); safePrint(", len="); safePrintln(String(rbuflen));
     
     
     
@@ -176,7 +178,7 @@ public:
     // TODO: keep track of packet completion and read start of buffer as potentially an ongoing 
     //       transmission of a single packet
     
-    pcount = 0;   // current count of instantiated packets
+    //pcount = 0;   // current count of instantiated packets
     uint8_t idx = 0;  // current position within buffer
     
     while( pcount < num_packets ){  
@@ -239,12 +241,14 @@ public:
     
     if( pcount == num_packets ){
       //safePrintln(" --> parsed all packets");
+      rbuflen = 0;
     }
     
   }
 
   void printPackets() {
     //safePrintln("*** printing packet...");
+    if( pcount == 0) return;
     for( int i=0; i<pcount; i++ ){
       safePrintln(pbuf[i]->toString(true));
     }
@@ -252,6 +256,7 @@ public:
   }
   
   void deletePackets() {
+  if( pcount == 0 ) return;
     for( int i=0; i<pcount; i++ ){
       delete pbuf[i];
     }
@@ -280,7 +285,6 @@ public:
   static RH_RF69 rf69;
   static RHReliableDatagram rf69_manager;
 };
-
 
 RH_RF69 RadioLogger::rf69 = RH_RF69(RFM69_CS, RFM69_INT);
 RHReliableDatagram RadioLogger::rf69_manager = RHReliableDatagram(RadioLogger::rf69, NODE_ADDRESS);

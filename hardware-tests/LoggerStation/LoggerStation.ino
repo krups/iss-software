@@ -36,6 +36,8 @@ void setup()
   //while (!Serial) { delay(1); } // wait until serial console is open, remove if not tethered to compute
 
   pinMode(LED, OUTPUT);
+
+  delay(3000);
   
   if( station.begin() ){
     digitalWrite(LED, HIGH);
@@ -48,16 +50,19 @@ void setup()
 
 void loop() {
   if( station.available() ){
-
     if( station.receivePackets() ){
 
+      station.decodePackets();
+      
       station.printPackets();
 
       station.deletePackets();
 
       digitalWrite(LED, !digitalRead(LED));
+    } else {
+      Serial.println("failed to receive packets");
     }
     
   }
-  //delay(10);
+  delay(10);
 }
