@@ -410,9 +410,15 @@ void syslog(String s) {
   safeUpdate(&mSysLogCreated, &sysLogCreated, &syslog_lock);
   if ( mSysLogCreated ) {
     unsigned long m = safeMillis();
-    while ( !sd_lock.lock(100) );
-    sdlog.logMsg(LOGID_SYS, String(m) + "\t" + s);
-    sd_lock.unlock();
+    int tries = 0;
+    while (tries < 5 ){
+      if ( sd_lock.lock(100) ){
+        sdlog.logMsg(LOGID_SYS, String(m) + "\t" + s);
+        sd_lock.unlock();
+        break;
+      }
+      tries++;
+    }
   }
 }
 
@@ -511,6 +517,7 @@ void sd_thread(int inc) {
     if (USBSERIAL_DEBUG) safePrintln("SD: failed to create SYSLOG file");
   }
 
+  syslog("syslog created");
 
   while ( 1 ) {
     // SLEEP HANDLING
@@ -682,6 +689,7 @@ void sleep_thread(int inc) {
   bool mAct = false; // our copy of activation status
   bool mDrp = false; // our copy of debug radio present;
   int  state = 0;    // state for pre-activation sleep routine
+  int  sleepCount = 0; // for keeping track of longer periods of time
 
   bool ss_radio = false,
        ss_tc    = false,
@@ -718,6 +726,7 @@ void sleep_thread(int inc) {
         needSleep = 1;
         ns_lock.unlock();
         if (USBSERIAL_DEBUG) safePrintln("SLEEP: requesting threads prepare for sleep");
+        syslog("SLEEP: requesting threads prepare for sleep");
         state = 1;
         break;
 
@@ -742,6 +751,7 @@ void sleep_thread(int inc) {
         // if all the threads are ready to sleep
         if ( ss_tc && ss_imu && ss_radio) {
           if (USBSERIAL_DEBUG) safePrintln("SLEEP: all threads acknowledged request for sleep, proceeding");
+          syslog("SLEEP: all threads acknowledged request for sleep, proceeding");
           state = 2;
         }
         break;
@@ -750,17 +760,26 @@ void sleep_thread(int inc) {
       case 2:
         // now we go to sleep
         who = Snooze.hibernate( config_teensy35 ); // return module that woke processor
+        sleepCount += 1;
 
-        // we're awake! let the threads know sleeping has finished... for now
-        while ( !ns_lock.lock(10) );
-        needSleep = 0;
-        ns_lock.unlock();
-
-        if (USBSERIAL_DEBUG) safePrintln("SLEEP: WOKE UP AND SET NEED SLEEP = 0");
-
-        // back to needing sleep
-        state = 0;
-        break;
+        // if we should go back to sleep, fall through and do state 2 again
+        if( sleepCount < 60 ){
+          break;
+        } 
+        // otherwise we're awake! let the threads know sleeping has finished... for now        
+        else {
+          while ( !ns_lock.lock(10) );
+          needSleep = 0;
+          ns_lock.unlock();
+  
+          if (USBSERIAL_DEBUG) safePrintln("SLEEP: WOKE UP AND SET NEED SLEEP = 0");
+          syslog("SLEEP: WOKE");
+  
+          // back to waiting on threds to sleep
+          state = 0;
+          sleepCount = 0;
+          break;
+        }
     }
 
     threads.delay(50);
@@ -861,17 +880,21 @@ void tc_thread(int inc) {
     bool forceStart = safeMillis() - lastData > 5000 ? true : false;
     if ( forceStart ) lastData = safeMillis();
 
+digitalWrite(LED_ACT, HIGH);
+
     // make call to TC interface
     while ( !spi_lock.lock(1000) );
     //safePrintln(String(safeMillis())+ "  TC: mutex was unlocked, got it ");
     bool gotData = tc.read_all(&mTcReadings, forceStart);
     spi_lock.unlock();
     //safePrintln("TC: read vals");
-
+      
+    digitalWrite(LED_ACT, LOW);
+      
     if ( gotData ) {
       if (USBSERIAL_DEBUG) safePrintln("TC: got TC readings");
 
-      digitalWrite(LED_ACT, HIGH);
+      
 
       // this data's timestamp
       unsigned long nn = safeMillis();
@@ -921,7 +944,6 @@ void tc_thread(int inc) {
       }
       
       lastData = nn;
-      digitalWrite(LED_ACT, LOW);
 
       
     } else {
