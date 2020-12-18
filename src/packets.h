@@ -43,8 +43,9 @@ typedef struct {
   float tc1_temp;           // 4B, TC converter 1 cold junction temperature
   float tc2_temp;           // 4B, TC converter 2 cold junction temperature
   uint8_t ir_sig;           // 1B, iridium signal strength (0-5)
+  uint8_t log_num;          // 1B, current logfile id
 } telem_t;
-#define TELEM_T_SIZE    17  // just enough for data, not including struct padding
+#define TELEM_T_SIZE    18  // just enough for data, not including struct padding
 
 // high g accel stats packet
 typedef struct {
@@ -150,7 +151,7 @@ public:
   }
   CommandPacket(char cmd) : Packet(PTYPE_COMMAND, CMD_T_SIZE ){
     _data[0] = cmd;
-    memset(&_data[2], 0, NUM_CMD_PAYLOAD_BYTES + 1);
+    memset(&_data[2], 0, NUM_CMD_PAYLOAD_BYTES);
   }
   
   String toString() {
@@ -181,12 +182,13 @@ public:
   TelemPacket(uint8_t *buf) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
     memcpy(_data, buf, _size);
   }
-  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
+  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig, uint8_t log_num) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
     *(unsigned long*)(&_data[0]) = t;
     *(float*)(&_data[4])         = batt;
     *(float*)(&_data[8])         = tc1_temp;
     *(float*)(&_data[12])        = tc2_temp;
     *(uint8_t*)(&_data[16])      = ir_sig;
+    *(uint8_t*)(&_data[17])      = log_num;
   }
   
   String toString() { return toString(false); }
@@ -196,7 +198,7 @@ public:
     if( with_timestamp ){
       a = String(t()) + ", ";
     }
-    a += String(batt()) + ", " + String(tc1_temp()) + ", " + String(tc2_temp()) + ", " + String(ir_sig());
+    a += String(batt()) + ", " + String(tc1_temp()) + ", " + String(tc2_temp()) + ", " + String(ir_sig()) + ", " + String(log_num());
     
     return a;
   }
@@ -206,6 +208,7 @@ public:
   float tc1_temp(){return *((float*)&_data[8]);}
   float tc2_temp(){return *((float*)&_data[12]);}
   uint8_t ir_sig(){return ((uint8_t)_data[16]); }
+  uint8_t log_num(){ return ((uint8_t)_data[17]); }
 };
 
 // once accel sample

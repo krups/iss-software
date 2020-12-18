@@ -35,6 +35,8 @@ void setup()
   Serial.begin(115200);
   //while (!Serial) { delay(1); } // wait until serial console is open, remove if not tethered to compute
 
+  Serial.setTimeout(10);
+
   pinMode(LED, OUTPUT);
 
   delay(3000);
@@ -53,6 +55,8 @@ void loop() {
     if( station.receivePackets() ){
 
       station.decodePackets();
+
+      //Serial.println("printing...");
       
       station.printPackets();
 
@@ -64,5 +68,26 @@ void loop() {
     }
     
   }
-  delay(10);
+
+  if( Serial.available() ){
+    String cmd = Serial.readStringUntil('\n');
+
+    Serial.println("read in " + cmd);
+
+    // send activation command packet
+    if( cmd.equals("act") || cmd.equals("ACT") ){
+      CommandPacket p(CMDID_ACTIVATE);
+      station.send(&p, CAPSULE_ADDRESS);
+      Serial.println("  sent activation command");
+    }
+
+    // build packet command 
+    if( cmd.equals("bp") || cmd.equals("BP") ){
+      CommandPacket p(CMDID_IR_BP);
+      station.send(&p, CAPSULE_ADDRESS);
+      Serial.println("  sent build packet command");
+    }
+  }
+  
+  //delay(10);
 }

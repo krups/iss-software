@@ -104,7 +104,7 @@ public:
     // the bouncer
     if( !_idValid(id) ) return 0;
     
-    if(USBSERIAL_DEBUG) safePrint("trying to open logfile #"); safePrint(String(id)); safePrint(" with filename "); safePrintln(_fnames[id]);
+    //if(USBSERIAL_DEBUG) safePrint("trying to open logfile #"); safePrint(String(id)); safePrint(" with filename "); safePrintln(_fnames[id]);
   
     _fh = SD.open(_fnames[id].c_str(), FILE_WRITE);
   
@@ -133,7 +133,7 @@ public:
     // bounce
     if( !_idValid(id) ) return 0;
     
-    if(USBSERIAL_DEBUG) safePrint("trying to open logfile #"); safePrint(String(id)); safePrint(" with filename "); safePrintln(_fnames[id]);
+    //if(USBSERIAL_DEBUG) safePrint("trying to open logfile #"); safePrint(String(id)); safePrint(" with filename "); safePrintln(_fnames[id]);
   
     // open file referenced by id
     _fh = SD.open(_fnames[id].c_str(), FILE_WRITE);
@@ -162,7 +162,7 @@ public:
   
   // Take uniform sample with number of bytes = `size` from file with id=`id`
   // Put result in sam_buf
-  void sample(int id, byte* sam_buf, unsigned long size){
+  void sample(int id, byte* sam_buf, unsigned long sizeRequest, unsigned long *sizeActual){
     if( !_idValid(id) ){
       safePrintln("attempt to sample file with ID that doesn't exist");
       return;
@@ -173,29 +173,29 @@ public:
       safePrintln("error opening file");
       return;
     }
-    safePrint("wanting "); safePrint(size); safePrintln("bytes");
+    safePrint("wanting "); safePrint(sizeRequest); safePrintln("bytes");
     char type_buf[1];
     _fh.read(type_buf, 1);
     _fh.seek(0);
     unsigned long packet_size;
+    
     switch (type_buf[0])
     {
-    case 'M':
+    case PTYPE_TELEM:
       packet_size = TELEM_T_SIZE;
       break;
-    case 'A':
+    case PTYPE_ACCELSTATS:
       packet_size = ACC_STAT_T_SIZE;
       break;
-    case 'T':
+    case PTYPE_TC:
       packet_size = TC_T_SIZE;
       break;
-    case 'B':
+    case PTYPE_ACCEL:
       packet_size = ACC_T_SIZE;
       break;
-    case 'I':
-      // fall through to default for now
-      //packet_size = IMU
-      //break;
+    case PTYPE_IMU:
+      packet_size = IMU_T_SIZE;
+      break;
     default:
       if(USBSERIAL_DEBUG) safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");
       return;
@@ -205,26 +205,31 @@ public:
     
     safePrint("packet size is "); safePrint(packet_size); safePrintln(" bytes");
     
-    unsigned long num_samples_needed = size/(packet_size - 1);
-    unsigned long num_packets_available = _fh.size()/packet_size;
-    unsigned long interval = num_packets_available/num_samples_needed;
+    unsigned long num_samples_needed = floor((float)sizeRequest/((float)packet_size));
+    unsigned long num_packets_available = (unsigned long)floor(((float)_fh.size())/((float)packet_size));
+    unsigned long interval = (unsigned long)floor(((float)num_packets_available)/((float)num_samples_needed));
     
     safePrint("num_samples_needed:    "); safePrintln(num_samples_needed);
     safePrint("num_packets_available: "); safePrintln(num_packets_available);
     safePrint("interval:              "); safePrintln(interval);
-    
-    for( int i = 0; i < num_samples_needed; i++ ){
+    int i=0;
+    for( i = 0; i < num_samples_needed; i++ ){
       int loc = i*packet_size*interval;
-      safePrint("  seeking to "); safePrintln(loc+1);
-      _fh.seek(loc+1);
-      safePrint("and reading "); safePrint(packet_size-1); safePrintln("bytes");
-      _fh.read(&sam_buf[i*(packet_size-1)], packet_size-1);
+      safePrint("  seeking to "); safePrintln(loc);
+      _fh.seek(loc);
+      safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
+      _fh.read(&sam_buf[i*(packet_size)], packet_size);
     }
+    
+    *sizeActual = (i * packet_size) - 1;
     
     _fh.close();
 
   }
+  
   bool isReady() { return _ready; }
+
+  uint8_t logNum() { return _logNum; }
 
 private:
   // parameter validation for the ID corresponding to the the file to write to

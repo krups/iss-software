@@ -69,7 +69,7 @@ volatile bool sysLogCreated = false;
 // are there packets in the command packet queue
 Threads::Mutex cmdPacket_lock;
 volatile int cmdPacketCount = 0;
-volatile Packet* cmdPackets[MAX_CMDQ_SIZE];
+volatile CommandPacket* cmdPackets[MAX_CMDQ_SIZE];
 
 // have we detected activation
 volatile bool activation = false;
@@ -170,20 +170,39 @@ Threads::Mutex ser_lock;
 Threads::Mutex i2c_lock;
 
 
+// compression thread vars
+volatile bool buildPacket = false;
+Threads::Mutex buildPacket_lock;
+
+
+
 // enable flags for ism debug logging from individual threads
 volatile bool logen_tc = true;
 volatile bool logen_telem = true;
 
+
+// cap sensing vars
+volatile bool capVal = true;
+Threads::Mutex capVal_lock;
 
 // IRIDIUM VARS
 #define IRIDIUM_SERIAL Serial4
 #define DIAGNOSTICS false// Change this to see diagnostics
 IridiumSBD modem(Serial4);
 int signalQuality = -1;
+Threads::Mutex sq_lock;
 int irerr;
-Threads::Mutex ircmd_lock;    // for giving commands to the iridium thread
-volatile int ircmd = 0;
+//Threads::Mutex ircmd_lock;    // for giving commands to the iridium thread
+//volatile int ircmd = 0;
 uint8_t signalBrightness[6] = {0, 2, 10, 50, 100, 250};
+
+Threads::Mutex irready_lock;
+volatile bool irready = false;
+
+Threads::Mutex irbuf_lock;
+volatile bool irbuf_ready = false;
+volatile uint8_t irbuf[340];
+volatile int irbuf_len = 0;
 
 
 /**************************************************************************
@@ -397,7 +416,7 @@ void imu_thread(int inc) {
       }
       imuq_lock.unlock();
     }
-    threads.delay(500);
+    threads.delay(IMU_SAMPLE_PERIOD);
   }
 }
 
@@ -436,7 +455,7 @@ void sd_thread(int inc) {
   spi_lock.unlock();
   sd_lock.unlock();
 
-  threads.delay(100);
+  threads.delay(200);
 
   // create logfile for accelerometer data
   if (USBSERIAL_DEBUG) safePrintln("SD: Creating logfile for accelerometer data...");
@@ -452,7 +471,7 @@ void sd_thread(int inc) {
     if (USBSERIAL_DEBUG) safePrintln("SD: failed to create acc file");
   }
 
-  threads.delay(500);
+  threads.delay(200);
 
   // create log file for tc data
   if (USBSERIAL_DEBUG) safePrintln("Creating logfile for thermocouple data...");
@@ -468,7 +487,7 @@ void sd_thread(int inc) {
     if (USBSERIAL_DEBUG) safePrintln("SD: failed to create tc file");
   }
 
-  threads.delay(500);
+  threads.delay(200);
 
   // create logfile for telemetry data
   if (USBSERIAL_DEBUG) safePrintln("Creating logfile for telemetry data...");
@@ -484,7 +503,7 @@ void sd_thread(int inc) {
     if (USBSERIAL_DEBUG) safePrintln("SD: failed to create telem file");
   }
 
-  threads.delay(500);
+  threads.delay(200);
 
   // create logfile for imu data
   if (USBSERIAL_DEBUG) safePrintln("Creating logfile for IMU data...");
@@ -500,7 +519,7 @@ void sd_thread(int inc) {
     if (USBSERIAL_DEBUG) safePrintln("SD: failed to create IMU file");
   }
 
-  threads.delay(500);
+  threads.delay(200);
 
   // create syslog file
   if (USBSERIAL_DEBUG) safePrintln("Creating logfile for syslog messages...");
@@ -602,7 +621,7 @@ void sd_thread(int inc) {
     // imu packet logging
     if ( imuq_lock.lock() ){
       if ( imuq_count > 0 ) {
-        if (USBSERIAL_DEBUG) safePrintln("got imu packet to log to SD");
+        //if (USBSERIAL_DEBUG) safePrintln("got imu packet to log to SD");
         // have to get non volatile pointer to the memory or 
         // the Packet constructor complains
         p = new IMUPacket(imudataq[imuq_read]->data());
@@ -642,8 +661,52 @@ void sd_thread(int inc) {
         tcq_lock.unlock();
       }
     }
+  }
+}
+
+
+
+/**********************************************************************************
+   Accelerometer thread
+
+*/
+void acc_thread(int inc) {
+
+  bool tmss = false;
+  unsigned long t = 0;
+  uint16_t x, y, z;
+
+  while (1) {
+    // get log timestamp
+    t = safeMillis();
+    x = analogRead(PIN_ACC_X);
+    y = analogRead(PIN_ACC_Y);
+    z = analogRead(PIN_ACC_Z);
     
-    // TODO: check for request to sample a log file
+    // LOG THE DATA 
+    // push packet into acc data queue to be logged
+    while ( !accq_lock.lock(100) ); // get lock for telem packet log queue
+    if ( accq_count + 1 < MAX_ACCQ_SIZE ) {
+      //if (USBSERIAL_DEBUG) safePrintln("creating acc packet for sd log");
+      accdataq[accq_write] = new AccPacket(x, y, z, t);
+      accq_write = (accq_write + 1) % MAX_ACCQ_SIZE;
+      accq_count += 1;
+    }
+    accq_lock.unlock();
+
+    threads.delay(ACC_SAMPLE_PERIOD);
+  }
+}
+
+/**********************************************************************************
+   Compression thread
+
+*/
+void compress_thread(int inc) {
+
+  // TODO: check for request to sample a log file
+
+  bool mBuildPacket = false;
 /*
       rdy = false;
       }
@@ -660,21 +723,32 @@ void sd_thread(int inc) {
       once = false;
       }
     */
-  }
-}
-
-
-
-/**********************************************************************************
-   Accelerometer thread
-
-*/
-void acc_thread(int inc) {
-
-  bool tmss = false;
 
   while (1) {
+    safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
 
+    if( mBuildPacket ){
+
+      safePrintln("#######\nsampling acc log######");
+      unsigned long sz = 340;
+      unsigned long szAct = 0;
+      safePrint("TC_T_SIZE = "); safePrintln(TC_T_SIZE);
+      safePrint("sz = "); safePrintln(sz);
+      uint8_t buf[sz];
+      while( !sd_lock.lock(10) );
+      while( !irbuf_lock.lock(10) );
+      sdlog.sample(LOGID_TC, irbuf, sz, &irbuf_len);
+      szAct = irbuf_len;
+      irbuf_ready = true;
+      irbuf_lock.unlock();
+      sd_lock.unlock();
+
+      safePrintln("ACTually got " + String(szAct) + " bytes in buffer");
+
+      mBuildPacket = false;
+      safeAssign(&buildPacket, false, &buildPacket_lock);
+    }
+    threads.delay(500);
   }
 }
 
@@ -711,6 +785,7 @@ void sleep_thread(int inc) {
     safeUpdate(&mAct, &activation, &act_lock);
     if ( mAct ) {
       if (USBSERIAL_DEBUG) safePrintln("SLEEP: DETECTED ACTIVATION");
+      syslog("SLEEP: activation detected, exiting sleep thread");
       break;
     }
 
@@ -763,7 +838,7 @@ void sleep_thread(int inc) {
         sleepCount += 1;
 
         // if we should go back to sleep, fall through and do state 2 again
-        if( sleepCount < 60 ){
+        if( sleepCount < 2 ){
           break;
         } 
         // otherwise we're awake! let the threads know sleeping has finished... for now        
@@ -792,18 +867,61 @@ void sleep_thread(int inc) {
 }
 
 
-
 /***********************************************************************************
    command processing thread
    receive a packet over debug radio, process it here
    only applies to test missions where receiving commands is applicable
 */
+#ifdef ISM_DEBUG
+
 void command_thread(int inc) {
 
+  syslog("CMDTHRD: starting");
 
+  while(1){
+    
+    if( cmdPacket_lock.lock() ){
+      if( cmdPacketCount > 0 ){
+        for( int i=0; i < cmdPacketCount; i++ ){
+          switch( cmdPackets[i]->cmd() ){
+
+
+            // SIMULATE AN ACTIVATION CONDITION
+            case CMDID_ACTIVATE:
+              while( !act_lock.lock(10) );
+              activation = true;
+              act_lock.unlock();
+              if (USBSERIAL_DEBUG) safePrintln("CMDTHRD: manual activation detected");
+              syslog("CMDTHRD: manual activation");
+              break;
+
+            // TRIGGER A SAMPLE OPERATION AND FILLING THE IRIDIUM BUFFER
+            case CMDID_IR_BP:
+              syslog("CMDTHRD: building packet");
+              safeAssign(&buildPacket, true, &buildPacket_lock);
+              break;
+
+            // TRIGGER SENDING THE IRIDIUM BUFFER
+            case CMDID_IR_SP:
+              //syslog("CMDTHRD: sending iridium packet");
+              break;
+             
+            default:
+              break;
+          }
+          delete cmdPackets[i];
+        }
+        cmdPacketCount = 0;
+      }
+      cmdPacket_lock.unlock();
+    }
+
+
+    threads.delay(100);
+  }
 
 }
-
+#endif
 
 /***********************************************************************************
    Thermocouple manager thread
@@ -880,7 +998,7 @@ void tc_thread(int inc) {
     bool forceStart = safeMillis() - lastData > 5000 ? true : false;
     if ( forceStart ) lastData = safeMillis();
 
-digitalWrite(LED_ACT, HIGH);
+//digitalWrite(LED_ACT, HIGH);
 
     // make call to TC interface
     while ( !spi_lock.lock(1000) );
@@ -889,7 +1007,7 @@ digitalWrite(LED_ACT, HIGH);
     spi_lock.unlock();
     //safePrintln("TC: read vals");
       
-    digitalWrite(LED_ACT, LOW);
+    //digitalWrite(LED_ACT, LOW);
       
     if ( gotData ) {
       if (USBSERIAL_DEBUG) safePrintln("TC: got TC readings");
@@ -923,7 +1041,7 @@ digitalWrite(LED_ACT, HIGH);
       // push packet into tc data queue to be logged
       while ( !tcq_lock.lock(100) ); // get lock for telem packet log queue
       if ( tcq_count + 1 < MAX_TCQ_SIZE ) {
-        if (USBSERIAL_DEBUG) safePrintln("creating tc packet ");
+        //if (USBSERIAL_DEBUG) safePrintln("creating tc packet ");
         tcdataq[tcq_write] = new TcPacket(mTcReadings.data, nn);
         tcq_write = (tcq_write + 1) % MAX_TCQ_SIZE;
         tcq_count += 1;
@@ -935,7 +1053,7 @@ digitalWrite(LED_ACT, HIGH);
       if( ISM_DEBUG && logen_tc){
         while ( !logtcq_lock.lock(100) ); // get lock for telem packet log queue
         if ( logtcq_count + 1 < MAX_TCQ_SIZE ) {
-          if (USBSERIAL_DEBUG) safePrintln("creating radio tc packet ");
+          //if (USBSERIAL_DEBUG) safePrintln("creating radio tc packet ");
           logtcdataq[logtcq_write] = new TcPacket(mTcReadings.data, nn);
           logtcq_write = (logtcq_write + 1) % MAX_TCQ_SIZE;
           logtcq_count += 1;
@@ -953,6 +1071,7 @@ digitalWrite(LED_ACT, HIGH);
   }
 }
 
+
 /***********************************************************************************
    radio interface thread
    publishes any debug messages and packets generated in other threads
@@ -964,14 +1083,16 @@ void radio_thread(int inc) {
 
   while ( !spi_lock.lock(1000) );
   ret = logNode.begin();
-  logNode.setRetries(0);
+  logNode.setRetries(2);
   spi_lock.unlock();
 
   if ( ret ) {
     if (USBSERIAL_DEBUG) safePrintln("ISM: log node started");
+    syslog("ISM: log node started");
     analogWrite(LED_ISM_TX, 5); // dim lit
   } else {
     if (USBSERIAL_DEBUG) safePrintln("ISM: log node failed to start, idling thread");
+    syslog("ISM: log node failed to start, idling thread");
     while (1) threads.delay(1000);
   }
 
@@ -1015,20 +1136,21 @@ void radio_thread(int inc) {
     // radio log the tc packet if we have one
     if( newData ){
       // get SPI mutex and send packet over radio
-      if (USBSERIAL_DEBUG) safePrintln("ISM:  about to send ism packet");
+      //if (USBSERIAL_DEBUG) safePrintln("ISM:  about to send ism packet");
       analogWrite(LED_ISM_TX, 100);
 
       sent = false;
       while ( !sent ) {
         if (  spi_lock.lock(1000) ) {
+          // RH_BROADCAST_ADDRESS
           if ( logNode.send(p, RH_BROADCAST_ADDRESS) ) {
             sent = true;
           }
           spi_lock.unlock();
           if ( sent ) {
-            if (USBSERIAL_DEBUG) safePrintln("sent");
+            //if (USBSERIAL_DEBUG) safePrintln("sent");
           } else {
-            if (USBSERIAL_DEBUG) safePrintln("failed");
+            //if (USBSERIAL_DEBUG) safePrintln("failed");
           }
         }
       }
@@ -1065,17 +1187,66 @@ void radio_thread(int inc) {
           }
           spi_lock.unlock();
           if ( sent ) {
-            if (USBSERIAL_DEBUG) safePrintln("sent");
+            //if (USBSERIAL_DEBUG) safePrintln("sent");
           } else {
-            if (USBSERIAL_DEBUG) safePrintln("failed");
+            //if (USBSERIAL_DEBUG) safePrintln("failed");
           }
         }
       }
       delete p;
       analogWrite(LED_ISM_TX, 5);
     }
+
+    // check if there is a recevied packet waiting for us
+    newData = false;
+    if (  spi_lock.lock() ) {
+      newData = logNode.available();
+    }
+    // if we have a new packet waiting
+    while( newData ) {
+
+      //safePrintln("log node available");
+      
+      // receive it
+      bool rcvd = logNode.receivePackets();
+
+
+      
+      // if we received it, decode it into a packet in the logNode packet buffer
+      if( rcvd ){
+
+        //safePrintln("  recevied from log node");
+        
+        newData = false;
+        int np = logNode.decodePackets();
+        
+        // if it is in the packet buffer, copy it to the command buffer
+        if( np > 0 ){
+
+          //safePrintln("num packets was nonzero");
+
+          while( !cmdPacket_lock.lock(10) );
+
+          // copy packets from logNode to command buffer, only if they are command packets
+          for( int i=0; i<np; i++ ){
+            if( logNode.packets()[i]->type() == PTYPE_COMMAND ){
+              //safePrintln("! added command packet to command packet queue");
+              cmdPackets[cmdPacketCount] = new CommandPacket(logNode.packets()[i]->data());
+              cmdPacketCount++;
+            }
+          }
+
+          cmdPacket_lock.unlock();
+
+          logNode.deletePackets();
+        }
+      }
+
+    } 
+    spi_lock.unlock();
     
-    threads.delay(100);
+    
+    threads.delay(20);
   }
 }
 
@@ -1083,7 +1254,6 @@ void radio_thread(int inc) {
 /***********************************************************************************
    Telem gathering thread for board info
 */
-int batt = 0;
 void telem_thread(int inc) {
   bool mNeedSleep = false;
   unsigned long ts = 0;
@@ -1093,6 +1263,16 @@ void telem_thread(int inc) {
   if (USBSERIAL_DEBUG) safePrintln("TELEM: starting thread");
 
   threads.delay(5000);
+
+  // get current logNum
+  while ( !sd_lock.lock(1000) );
+  while ( !spi_lock.lock(1000) );
+  uint8_t logNum = sdlog.logNum();
+  spi_lock.unlock();
+  sd_lock.unlock();
+
+  // signal quality of iridium modem
+  uint8_t s = 0;
 
   while (1) {
     // check for need to sleep and handle properly
@@ -1117,14 +1297,17 @@ void telem_thread(int inc) {
     batt = analogRead( PIN_BAT_SENSE ); //PIN_BAT_SENSE
     vbat = ((float)(batt+VBAT_CAL)) / 1023.0;
     vbat = vbat * 3.3 * 2;
-    
 
     ts = safeMillis(); // get current as possible timestamp
 
+    if( sq_lock.lock(10) ){
+      s = signalQuality;
+      sq_lock.unlock();
+    }
 
     while ( !telemq_lock.lock(100) ); // get lock for telem packet log queue
     if ( telemq_count + 1 < MAX_TELEMQ_SIZE ) {
-      telemdataq[telemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, (uint8_t)0);  // TODO: fill in tc1 and tc2 temp and irsig
+      telemdataq[telemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, s, logNum);  // TODO: fill in tc1 and tc2 temp and irsig
       telemq_write = (telemq_write + 1) % MAX_TELEMQ_SIZE;
       telemq_count += 1;
     }
@@ -1133,7 +1316,7 @@ void telem_thread(int inc) {
     if( ISM_DEBUG  && logen_telem ){
       while ( !logtelemq_lock.lock(100) ); // get lock for telem packet log queue
       if ( logtelemq_count + 1 < MAX_TELEMQ_SIZE ) {
-        logtelemdataq[logtelemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, (uint8_t)0);  // TODO: fill in tc1 and tc2 temp and irsig
+        logtelemdataq[logtelemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, s, logNum);  // TODO: fill in tc1 and tc2 temp and irsig
         logtelemq_write = (logtelemq_write + 1) % MAX_TELEMQ_SIZE;
         logtelemq_count += 1;
       }
@@ -1153,9 +1336,18 @@ void telem_thread(int inc) {
   }
 }
 
+
+/***********************************************************************************
+   Iridium model control thread
+*/
 void iridium_thread(int inc) {
 
   bool mAct = false;
+  bool mBufReady=false, mirready=false;
+  int mSq = 0;
+  unsigned long curMillis = 0;
+  unsigned long signalCheckInterval = 15000;
+  unsigned long lastSignalCheck = 0;
 
   // pre activation routine
   while (1) {
@@ -1177,9 +1369,9 @@ void iridium_thread(int inc) {
   // Start the serial port connected to the satellite modem
   IRIDIUM_SERIAL.begin(9600);
 
-  if (USBSERIAL_DEBUG) safePrint("IRIDIUM: Powering on modem...");
+  if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: Powering on modem...");
   digitalWrite(PIN_IR_ENABLE, HIGH);
-  //analogWrite(LED_IR_ON, 5); // not blinding
+  analogWrite(LED_IR_ON, 5); // not blinding
   threads.delay(2000);
 
   // Begin satellite modem operation
@@ -1197,64 +1389,106 @@ void iridium_thread(int inc) {
   // Test the signal quality.
   // This returns a number between 0 and 5.
   // 2 or better is preferred.
-  irerr = modem.getSignalQuality(signalQuality);
+  irerr = modem.getSignalQuality(mSq);
   if (irerr != ISBD_SUCCESS)
   {
     if (USBSERIAL_DEBUG) safePrint("IRIDIUM: SignalQuality failed: error ");
     if (USBSERIAL_DEBUG) safePrintln(irerr);
+    syslog("IRIDIUM: failed to get first signal strength reading");
     //TODO: error handling
     //return;
+  } else {
+    syslog("IRIDIUM: first signal strength: " + String(mSq));
   }
+
+  
+  while( !sq_lock.lock(10) );
+  signalQuality = mSq;
+  sq_lock.unlock();
+
+  if( mSq > 0 ){
+    safeAssign(&irready, true, &irready_lock);
+    syslog("IRIDIUM: ready to send a packet");
+  }
+  
   if (USBSERIAL_DEBUG) safePrint("IRIDIUM: On a scale of 0 to 5, signal quality is currently ");
   if (USBSERIAL_DEBUG) safePrint(signalQuality);
   if ( signalQuality >= 0 && signalQuality <= 5 ) {
-    //analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
+    analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
   }
-
-  int cmd = 0;
-  unsigned long curMillis = 0;
-  unsigned long signalCheckInterval = 15000;
-  unsigned long lastSignalCheck = safeMillis();
 
   // start main packet send loop
   while (1) {
     threads.delay(50);
 
-    // check for a command set in the command variable
-    ircmd_lock.lock(50);
-    if (ircmd_lock.getState()) {
-      if ( ircmd != 0) {
-        cmd = ircmd;
-        ircmd = 0;
-      }
-      ircmd_lock.unlock();
-    }
+    /////////////////////
+    // helloe world command
+    /////////////////////
+//    if ( cmd == CMDID_IR_TEST ) {
+//      // Send the message
+//      if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending test iridium message. This might take several minutes.\r\n");
+//      analogWrite(LED_IR_TX, 20);
+//      irerr = modem.sendSBDText("Hello, world!");
+//      analogWrite(LED_IR_TX, 0);
+//      if (irerr != ISBD_SUCCESS)
+//      {
+//        if (USBSERIAL_DEBUG) safePrint("IRIDIUM: sendSBDText failed: error ");
+//        if (USBSERIAL_DEBUG) safePrintln(irerr);
+//        if (irerr == ISBD_SENDRECEIVE_TIMEOUT)
+//          if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: Try again with a better view of the sky.");
+//      }
+//
+//      else
+//      {
+//        if (USBSERIAL_DEBUG) safePrintln("*****************");
+//        if (USBSERIAL_DEBUG) safePrintln("*** TEST  SENT  *");
+//        if (USBSERIAL_DEBUG) safePrintln("*****************");
+//
+//        // clear command flag on success
+//        cmd = 0;
+//      }
+//    }
 
-    /////////////////////
-    // PROCESS TEST SEND COMMAND
-    /////////////////////
-    if ( cmd == CMDID_IR_TEST ) {
+    ///////////////////
+    // send data buffer command
+    ////////////////////
+
+    while( !sq_lock.lock(10) );
+    signalQuality = mSq;
+    sq_lock.unlock();
+    mirready = mSq > 0;
+    safeUpdate(&mBufReady, &irbuf_ready, &irbuf_lock);
+    
+    if ( mirready && mBufReady ) {
       // Send the message
-      if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending test iridium message. This might take several minutes.\r\n");
-      //analogWrite(LED_IR_TX, 20);
-      irerr = modem.sendSBDText("Hello, world!");
+      if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending data buffer over iridium\r\n");
+      syslog("IRIDIUM: sending data buffer");
+      analogWrite(LED_IR_TX, 20);
+
+      // TODO: copy this locally so that other threads can start filling up another packet
+      //       while the iridium thread sends the current one.
+      while( !irbuf_lock.lock(100) );
+      irerr = modem.sendSBDBinary(irbuf, irbuf_len);
+      irbuf_lock.unlock();
+      
       analogWrite(LED_IR_TX, 0);
       if (irerr != ISBD_SUCCESS)
       {
-        if (USBSERIAL_DEBUG) safePrint("IRIDIUM: sendSBDText failed: error ");
+        if (USBSERIAL_DEBUG) safePrint("IRIDIUM: sendSBDBinary failed: error ");
         if (USBSERIAL_DEBUG) safePrintln(irerr);
         if (irerr == ISBD_SENDRECEIVE_TIMEOUT)
           if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: Try again with a better view of the sky.");
+
+        syslog("IRIDIUM: packet send fail, err="+String(irerr));
       }
 
       else
       {
         if (USBSERIAL_DEBUG) safePrintln("*****************");
-        if (USBSERIAL_DEBUG) safePrintln("*** MESSAGE SENT *");
+        if (USBSERIAL_DEBUG) safePrintln("*** SENT PACKET *");
         if (USBSERIAL_DEBUG) safePrintln("*****************");
 
-        // clear command flag on success
-        cmd = 0;
+        syslog("IRIDIUM: sent binary packet");
       }
     }
 
@@ -1263,18 +1497,30 @@ void iridium_thread(int inc) {
     ////////////////////
     curMillis = safeMillis();
     if ( curMillis - lastSignalCheck > signalCheckInterval ) {
-      irerr = modem.getSignalQuality(signalQuality);
+      irerr = modem.getSignalQuality(mSq);
+
+      
       if (irerr != ISBD_SUCCESS) {
         if (USBSERIAL_DEBUG) safePrint("IRIDIUM: SignalQuality failed: error ");
         if (USBSERIAL_DEBUG) safePrintln(irerr);
+        syslog("IRIDIUM: failed to get signal quality");
         //TODO: error handling
         //return;
       } else {
         if (USBSERIAL_DEBUG) safePrint("IRIDIUM: On a scale of 0 to 5, signal quality is currently ");
         if (USBSERIAL_DEBUG) safePrint(signalQuality);
         if (USBSERIAL_DEBUG) safePrintln(".");
+        syslog(String("IRIDIUM: signal quality is ") + String(signalQuality));
         if ( signalQuality >= 0 && signalQuality <= 5 ) {
           analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
+        }
+
+        while( !sq_lock.lock(10) );
+        signalQuality = mSq;
+        sq_lock.unlock();
+        
+        if( mSq > 0 ){
+          safeAssign(&irready, true, &irready_lock); 
         }
       }
       lastSignalCheck = curMillis;
@@ -1284,6 +1530,51 @@ void iridium_thread(int inc) {
 }
 
 
+/***********************************************************************************
+   Capacitive sensing thread
+*/
+void cap_thread(int inc) {
+
+  // cap sense control 
+  // this configuration supports an at42qt touch chip on a breakout board from adafruit
+  pinMode(PIN_CAPSENSE0, INPUT); // unused
+
+  // gnd connection
+  pinMode(PIN_CAPSENSE1, OUTPUT);
+  digitalWrite(PIN_CAPSENSE1, LOW);
+
+  // output of cap sensor
+  pinMode(PIN_CAPSENSE2, INPUT);
+  
+  pinMode(PIN_CAPSENSE3, OUTPUT);
+  digitalWrite(PIN_CAPSENSE3, HIGH);
+
+
+  bool mAct = false;
+
+  bool mCapVal = false;
+  
+
+  while (1) {
+    safeUpdate(&mAct, &activation, &act_lock);
+
+    mCapVal = digitalRead(PIN_CAPSENSE2);
+    
+    if(USBSERIAL_DEBUG) safePrintln("CAP: capval="+String(mCapVal));
+
+    safeUpdate(&capVal, &mCapVal, &capVal_lock);
+
+    //digitalWrite(LED_ACT, mCapVal);
+
+    threads.delay(1000);
+    
+  }
+  
+}
+
+/***********************************************************************************
+   Setup
+*/
 void setup() {
 #if USBSERIAL_DEBUG
   Serial.begin(115200);
@@ -1338,8 +1629,11 @@ void setup() {
   threads.addThread(acc_thread,     1, 4096);
   threads.addThread(iridium_thread, 1, 4096);
   threads.addThread(imu_thread,     1, 4096);
+  threads.addThread(command_thread, 1, 4096);
+  threads.addThread(compress_thread,1, 4096);
+  threads.addThread(cap_thread,     1, 4096);
 
-  threads.addThread(sleep_thread,   1);
+  //threads.addThread(sleep_thread,   1);
 
   // start the radio thread if its powered on and enabled in config
   // TODO: this thread doesn't like being started first?????
@@ -1364,16 +1658,5 @@ void setup() {
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-
-  //  ser_lock.lock();
-  //  char a = Serial.read();
-  //  ser_lock.unlock();
-  //
-  //  if( a == '1' ){
-  //    ircmd_lock.lock();
-  //    ircmd = 1;
-  //    ircmd_lock.unlock();
-  //  }
 
 }

@@ -114,7 +114,7 @@ int main(int argc, char** argv)
       idx += TELEM_T_SIZE+1;
       
       // now print this packet
-      std::cout << p->t() << ", " << p->batt() << ", " << p->tc1_temp() << ", " << p->tc2_temp() << ", " << (uint8_t)p->ir_sig() << std::endl;
+      std::cout << p->t() << ", " << p->batt() << ", " << p->tc1_temp() << ", " << p->tc2_temp() << ", " << (int)p->ir_sig() << ", " <<  (int)p->log_num() << std::endl;
       
       delete p;
     } 

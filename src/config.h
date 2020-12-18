@@ -19,7 +19,7 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_JSC
+#define MISSION_TYPE         MISSION_TEST_SHUTTLE
 
 //////////////////////////////////////////
 // real mission for the two capsules with shuttle tile TPS
@@ -62,7 +62,7 @@
 // ground trial setup for the capsule with JSC TPS 
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_JSC)
-  #define USBSERIAL_DEBUG      0
+  #define USBSERIAL_DEBUG      1
   #define ISM_DEBUG            1
   #define TC_COUNT             5
   #define TC_THRESHOLD         1700.0 // degrees celcius
@@ -97,12 +97,13 @@
 
 /**********************************************************************************************
 * IMU AND ACC SAMPLE RATE CONFIG
-*
-#define IMU_FS                  
-#define IMU_BUFFER_SAMPLES
+*/
+#define IMU_SAMPLE_PERIOD       500
+//#define IMU_BUFFER_SAMPLES      
 
-#define ACC_FS
-#define ACC_BUFFER_SAMPLES
+#define ACC_SAMPLE_PERIOD       500
+//#define ACC_BUFFER_SAMPLES
+
 
 /************************************************************************************************
 * battery voltage calibration

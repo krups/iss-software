@@ -36,7 +36,7 @@ public:
       return false;
     }
     
-    safePrintln("Setting frequency");
+    if (USBSERIAL_DEBUG) safePrintln("Setting frequency");
     if (!rf69.setFrequency(RF69_FREQ)) {
       //safePrintln("setFrequency failed");
       return false;
@@ -56,7 +56,7 @@ public:
   };
 
   bool log(String data, uint8_t addr) {
-    safePrint("Sending "); safePrintln(data);
+    //if (USBSERIAL_DEBUG)safePrint("Sending "); safePrintln(data);
     
     // Send a message to the DESTINATION!
     if (rf69_manager.sendtoWait((uint8_t *)data.c_str(), data.length()+1, addr)) {
@@ -93,9 +93,7 @@ public:
     } else {
       //safePrintln(" -> failed (no ack)");
       return false;
-    }
-    
-    
+    }    
   }
   
   bool receivePackets() {
@@ -107,23 +105,24 @@ public:
       rbuflen = len;
 
       //delay(500);
-      safePrint("got "); safePrint(String(len)); safePrint(" bytes of ");
-      safePrint(" from "); safePrint(String(lastFrom)); safePrint(", to="); safePrint(String(to));
-      safePrint(", id="); safePrint(String(id)); safePrint(", flags = "); safePrintln(String(flags));
+      //if (USBSERIAL_DEBUG) {safePrint("got "); safePrint(String(len)); safePrint(" bytes of ");}
+      //if (USBSERIAL_DEBUG) {safePrint(" from "); safePrint(String(lastFrom)); safePrint(", to="); safePrint(String(to));}
+      //if (USBSERIAL_DEBUG) {safePrint(", id="); safePrint(String(id)); safePrint(", flags = "); safePrintln(String(flags));}
   
       // turn them into packets
       //decodePackets(rbuflen);
       
       return true;
     } else {
-      safePrintln("receive failed");
+      //if (USBSERIAL_DEBUG)safePrintln("receive failed");
       rbuflen = 0;
       return false;
     }
+    return false;
   }
   
-  void decodePackets() {    
-    if( rbuflen == 0) return;
+  int decodePackets() {    
+    if( rbuflen == 0) return 0;
   
     // detect number of packets containted in buffer
     int num_packets = 0;
@@ -160,11 +159,11 @@ public:
           i += IMU_T_SIZE;
           break;
         default:
-          safePrintln("ERAWR: lost track of what packet was which n where n what not");
+          if (USBSERIAL_DEBUG) safePrintln("ERAWR: lost track of what packet was which n where n what not");
       }
       
       if( i > rbuflen ){
-        safePrint("expecting another "); safePrintln(String(i-rbuflen));
+        if (USBSERIAL_DEBUG) {safePrint("expecting another "); safePrintln(String(i-rbuflen));}
       }
     }
     
@@ -185,7 +184,7 @@ public:
       
       // telemetry packet
       if( recvbuf[idx] == PTYPE_TELEM ){
-        safePrintln("got TELEM packet");
+        //if (USBSERIAL_DEBUG) safePrintln("got TELEM packet");
         pbuf[pcount] = new TelemPacket(&recvbuf[idx+1]);
         pcount++;
         idx += TELEM_T_SIZE+1;
@@ -193,7 +192,7 @@ public:
       
       // min/max stats over a period of time from the high g accelerometer
       else if( recvbuf[idx] == PTYPE_ACCELSTATS ){
-        safePrintln("got ACEL_STATS packet");
+        //if (USBSERIAL_DEBUG) safePrintln("got ACEL_STATS packet");
         pbuf[pcount] = new AccStatsPacket(&recvbuf[idx+1]);
         pcount++;
         idx += ACC_STAT_T_SIZE+1;
@@ -201,7 +200,7 @@ public:
       
       // timestamped thermocouple packet (containing TC_COUNT readings)
       else if( recvbuf[idx] == PTYPE_TC ){
-        safePrintln("got TC packet");
+        //if (USBSERIAL_DEBUG) safePrintln("got TC packet");
         pbuf[pcount] = new TcPacket(&recvbuf[idx+1]);
         pcount++;
         idx += TC_T_SIZE+1;
@@ -210,7 +209,7 @@ public:
       
       // singe timestamped high g accelerometer reading
       else if( recvbuf[idx] == PTYPE_ACCEL ){
-        safePrintln("got ACCEL packet");
+        //if (USBSERIAL_DEBUG) safePrintln("got ACCEL packet");
         pbuf[pcount] = new AccPacket(&recvbuf[idx+1]);
         pcount++;
         idx += ACC_T_SIZE+1;
@@ -218,7 +217,7 @@ public:
       
       // singe timestamped imu reading
       else if( recvbuf[idx] == PTYPE_IMU ){
-        safePrintln("got IMU packet");
+        //if (USBSERIAL_DEBUG) safePrintln("got IMU packet");
         pbuf[pcount] = new IMUPacket(&recvbuf[idx+1]);
         pcount++;
         idx += IMU_T_SIZE+1;
@@ -226,7 +225,7 @@ public:
       
       // COMMAND PACKET WOOHOO
       else if( recvbuf[idx] == PTYPE_COMMAND ){
-        safePrintln("got command packet oh yuh");
+        //if (USBSERIAL_DEBUG) safePrintln("got command packet oh yuh");
         pbuf[pcount] = new CommandPacket(&recvbuf[idx+1]);
         pcount++;
         idx += CMD_T_SIZE+1;
@@ -242,6 +241,9 @@ public:
     if( pcount == num_packets ){
       //safePrintln(" --> parsed all packets");
       rbuflen = 0;
+      return pcount;
+    } else {
+      return 0;
     }
     
   }
@@ -250,7 +252,7 @@ public:
     //safePrintln("*** printing packet...");
     if( pcount == 0) return;
     for( int i=0; i<pcount; i++ ){
-      safePrintln(pbuf[i]->toString(true));
+      if (USBSERIAL_DEBUG) safePrintln(pbuf[i]->toString(true));
     }
     //safePrintln("done");
   }

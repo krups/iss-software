@@ -10,11 +10,14 @@
 #define CMDID_IR_BP             3       // build packet
 #define CMDID_IR_SP             4       // send packet
 #define CMDID_IR_TEST           5       // send a "hello world" packet
+#define CMDID_ACTIVATE          6       // simulate activation
 
 // logging
-#define CMD_ID_START_LOG        6
-#define CMD_ID_STOP_LOG         7
+#define CMD_ID_START_ISMLOG     51
+#define CMD_ID_STOP_ISMLOG      52
 
+// create a new set of logfiles on the SD card
+#define CMD_ID_RESTART_SD       53
 
 // bidirectional paramaterless commands
 #define CMDID_OK                101       // acknowledge command for an ack packet or keepalive 
