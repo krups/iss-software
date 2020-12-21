@@ -152,6 +152,8 @@ int main(int argc, char** argv)
       idx += ACC_T_SIZE+1;
       
       // print
+
+      std::cout << p->t() << ", " << p->x() << ", " << p->y() << ", " << p->z() << std::endl;
       
       delete p;
     } 

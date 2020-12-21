@@ -174,8 +174,8 @@ public:
   TelemPacket(uint8_t *buf) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
     memcpy(_data, buf, _size);
   }
-  TelemPacket(unsigned long t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig, uint8_t log_num) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
-    *(unsigned long*)(&_data[0]) = t;
+  TelemPacket(uint32_t t, float batt, float tc1_temp, float tc2_temp, uint8_t ir_sig, uint8_t log_num) : Packet( PTYPE_TELEM, TELEM_T_SIZE ) {
+    *(uint32_t*)(&_data[0]) = t;
     *(float*)(&_data[4])         = batt;
     *(float*)(&_data[8])         = tc1_temp;
     *(float*)(&_data[12])        = tc2_temp;
@@ -183,7 +183,7 @@ public:
     *(uint8_t*)(&_data[17])      = log_num;
   }
   
-  uint16_t t(){return *((uint16_t*)&_data[0]);}
+  uint32_t t(){return *((uint32_t*)&_data[0]);}
   float batt(){return *((float*)&_data[4]);}
   float tc1_temp(){return *((float*)&_data[8]);}
   float tc2_temp(){return *((float*)&_data[12]);}
@@ -199,13 +199,13 @@ public:
   }
   
   AccPacket(uint16_t x, uint16_t y, uint16_t z, unsigned long t) : Packet( PTYPE_ACCEL, ACC_T_SIZE ) {
-    *(unsigned long*)(&_data[0]) = t;
+    *(uint32_t*)(&_data[0]) = t;
     *(uint16_t*)(&_data[4])      = x;
     *(uint16_t*)(&_data[6])      = y;
     *(uint16_t*)(&_data[8])      = z;
   }
 
-  unsigned long t(){return *((unsigned long*)&_data[0]);}
+  uint32_t t(){return *((uint32_t*)&_data[0]);}
   uint16_t x(){return *((uint16_t*)&_data[4]);}
   uint16_t y(){return *((uint16_t*)&_data[6]);}
   uint16_t z(){return *((uint16_t*)&_data[8]);}
