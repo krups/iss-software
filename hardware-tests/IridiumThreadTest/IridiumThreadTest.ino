@@ -959,7 +959,7 @@ void tc_thread(int inc) {
     if ( mNeedSleep ) {
       if (USBSERIAL_DEBUG) safePrintln("TC: sleeping");
 
-      while ( !spi_lock.lock(1000) );
+      while ( !spi_lock.lock(10) );
       tc.disable();
       spi_lock.unlock();
 
@@ -984,7 +984,7 @@ void tc_thread(int inc) {
           }
 
           // clear the sleep ready flag
-          while ( !sr_tc_lock.lock(1000) );
+          while ( !sr_tc_lock.lock(10) );
           sr_tc = false;
           sr_tc_lock.unlock();
           break;
@@ -1001,7 +1001,7 @@ void tc_thread(int inc) {
 //digitalWrite(LED_ACT, HIGH);
 
     // make call to TC interface
-    while ( !spi_lock.lock(1000) );
+    while ( !spi_lock.lock(10) );
     //safePrintln(String(safeMillis())+ "  TC: mutex was unlocked, got it ");
     bool gotData = tc.read_all(&mTcReadings, forceStart);
     spi_lock.unlock();
@@ -1458,7 +1458,8 @@ void iridium_thread(int inc) {
     sq_lock.unlock();
     mirready = mSq > 0;
     safeUpdate(&mBufReady, &irbuf_ready, &irbuf_lock);
-    
+
+    // if the radio is ready and the buffer is full
     if ( mirready && mBufReady ) {
       // Send the message
       if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending data buffer over iridium\r\n");
