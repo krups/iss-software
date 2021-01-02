@@ -135,7 +135,8 @@ int main(int argc, char** argv)
       TcPacket *p = new TcPacket((uint8_t*)&buffer[idx+1]);
       pcount++;
       idx += TC_T_SIZE+1;
-      
+
+      // print the tc data
       std::cout << p->time() << ", ";
       for( int i=0; i<TC_COUNT; i++ ){
         std::cout << p->data()[i] << (i==TC_COUNT-1 ? "" : ", ");
@@ -151,7 +152,7 @@ int main(int argc, char** argv)
       pcount++;
       idx += ACC_T_SIZE+1;
       
-      // print
+      // print the acc packet
 
       std::cout << p->t() << ", " << p->x() << ", " << p->y() << ", " << p->z() << std::endl;
       
@@ -164,8 +165,11 @@ int main(int argc, char** argv)
       pcount++;
       idx += IMU_T_SIZE+1;
       
-      // print
-      
+      // print the imu data 
+      std::cout <<  *(float*)(&p->data()[0])  << ", " <<  *(float*)(&p->data()[4])  << ", " <<  *(float*)(&p->data()[8]) << ", ";
+      std::cout <<  *(float*)(&p->data()[12]) << ", " <<  *(float*)(&p->data()[16]) << ", " <<  *(float*)(&p->data()[20]) << ", ";
+      std::cout <<  *(float*)(&p->data()[24]) << ", " <<  *(float*)(&p->data()[28]) << ", " <<  *(float*)(&p->data()[32]) << ", " << std::endl;
+
       delete p;
     } 
     
