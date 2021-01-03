@@ -391,8 +391,8 @@ void imu_thread(int inc) {
       ay = myICM.accY();
       az = myICM.accZ();
       gx = myICM.gyrX();
-      gy = myICM.gyrX();
-      gz = myICM.gyrX();
+      gy = myICM.gyrY();
+      gz = myICM.gyrZ();
       mx = myICM.magX();
       my = myICM.magY();
       mz = myICM.magZ();
