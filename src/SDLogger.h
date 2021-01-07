@@ -226,7 +226,55 @@ public:
     _fh.close();
 
   }
-  
+
+  // Get the latest packet from the file specified by `id`. 
+  // `sam_buf` must have enough space allocated for the given packet type.
+  void latest_packet(int id, byte* sam_buf){
+  if( !_idValid(id) ){
+      safePrintln("attempt to sample file with ID that doesn't exist");
+      return;
+    }
+    // open file referenced by id
+    _fh = SD.open(_fnames[id].c_str(), FILE_READ);
+    if( !_fh ) {
+      safePrintln("error opening file");
+      return;
+    }
+    char type_buf[1];
+    _fh.read(type_buf, 1);
+    _fh.seek(0);
+    unsigned long packet_size;
+    switch (type_buf[0])
+    {
+    case PTYPE_TELEM:
+      packet_size = TELEM_T_SIZE;
+      break;
+    case PTYPE_ACCELSTATS:
+      packet_size = ACC_STAT_T_SIZE;
+      break;
+    case PTYPE_TC:
+      packet_size = TC_T_SIZE;
+      break;
+    case PTYPE_ACCEL:
+      packet_size = ACC_T_SIZE;
+      break;
+    case PTYPE_IMU:
+      packet_size = IMU_T_SIZE;
+      break;
+    default:
+      if(USBSERIAL_DEBUG) safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");
+      return;
+      break;
+    }
+    packet_size += 1;
+    unsigned int start_loc = _fh.size() -  packet_size;
+    safePrint("  seeking to "); safePrintln(start_loc);
+    _fh.seek(start_loc);
+    safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
+    _fh.read(sam_buf, packet_size);
+    _fh.close();
+} 
+
   bool isReady() { return _ready; }
 
   uint8_t logNum() { return _logNum; }

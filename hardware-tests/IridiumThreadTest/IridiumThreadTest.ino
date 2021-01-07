@@ -11,6 +11,7 @@
 
 #include "src/packets.h"
 #include "src/SDLogger.h"
+#include "src/brieflz.h"
 #include "src/TcInterface.h"
 #include "src/RadioLogger.h"
 #include <IridiumSBD.h>
@@ -188,6 +189,7 @@ Threads::Mutex capVal_lock;
 // IRIDIUM VARS
 #define IRIDIUM_SERIAL Serial4
 #define DIAGNOSTICS false// Change this to see diagnostics
+#define SBD_TX_SZ 340
 IridiumSBD modem(Serial4);
 int signalQuality = -1;
 Threads::Mutex sq_lock;
@@ -201,7 +203,7 @@ volatile bool irready = false;
 
 Threads::Mutex irbuf_lock;
 volatile bool irbuf_ready = false;
-volatile uint8_t irbuf[340];
+volatile uint8_t irbuf[SBD_TX_SZ];
 volatile int irbuf_len = 0;
 
 
@@ -391,8 +393,8 @@ void imu_thread(int inc) {
       ay = myICM.accY();
       az = myICM.accZ();
       gx = myICM.gyrX();
-      gy = myICM.gyrY();
-      gz = myICM.gyrZ();
+      gy = myICM.gyrX();
+      gz = myICM.gyrX();
       mx = myICM.magX();
       my = myICM.magY();
       mz = myICM.magZ();
@@ -697,61 +699,86 @@ void acc_thread(int inc) {
     threads.delay(ACC_SAMPLE_PERIOD);
   }
 }
+// Compression helper function
+size_t pack(uint8_t* src, uint8_t* dst, size_t size){
+    size_t workmem_size = blz_workmem_size(size);
+    uint8_t workmem[workmem_size];
+    return blz_pack(src, dst, size, workmem);
+}
 
 /**********************************************************************************
    Compression thread
 
 */
 void compress_thread(int inc) {
+  unsigned int num_file_ids = 3;
+  int log_ids[num_file_ids] = {LOGID_TC, LOGID_ACC, LOGID_IMU};
+  // Compressed buffer
+  uint8_t c_buf[SBD_TX_SZ];
+  // Uncompressed buffer
+  uint8_t uc_buf[2*SBD_TX_SZ];
+  size_t pack_size = 0;
+  size_t input_size = 0;
+  size_t actual_read;
+  unsigned int id_idx = 0;
 
-  // TODO: check for request to sample a log file
+  while(1){
+    // Get latest telem packet first
+    while( !sd_lock.lock(10) );
+    sdlog.latest_packet(LOGID_TELEM, uc_buf);
+    sd_lock.unlock();
 
-  bool mBuildPacket = false;
-/*
-      rdy = false;
-      }
+    uint8_t offset = TELEM_T_SIZE + 1;
+    input_size += offset;
+    pack_size = pack(uc_buf, c_buf, input_size);
 
-      if( once && millis() > 30000 ){
-      safePrintln("#####################################\n###########################\nsampling acc log############################3");
-      unsigned long sz = 10*((int)TC_T_SIZE);
-      safePrint("TC_T_SIZE = "); safePrintln(TC_T_SIZE);
-      safePrint("sz = "); safePrintln(sz);
-      uint8_t buf[sz];
-      while( !sd_lock.lock() );
-      sdlog.sample(tcBinLogId, buf, sz);
-      sd_lock.unlock();
-      once = false;
-      }
-    */
-
-  while (1) {
-    safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
-
-    if( mBuildPacket ){
-
-      safePrintln("#######\nsampling acc log######");
-      unsigned long sz = 340;
-      unsigned long szAct = 0;
-      safePrint("TC_T_SIZE = "); safePrintln(TC_T_SIZE);
-      safePrint("sz = "); safePrintln(sz);
-      uint8_t buf[sz];
-      while( !sd_lock.lock(10) );
-      while( !irbuf_lock.lock(10) );
-      sdlog.sample(LOGID_TC, irbuf, sz, &irbuf_len);
-      szAct = irbuf_len;
-      irbuf_ready = true;
-      irbuf_lock.unlock();
-      sd_lock.unlock();
-
-      safePrintln("ACTually got " + String(szAct) + " bytes in buffer");
-
-      mBuildPacket = false;
-      safeAssign(&buildPacket, false, &buildPacket_lock);
+    size_t packet_size;
+    switch (log_ids[id_idx])
+    {
+    case LOGID_TC:
+      packet_size = TC_T_SIZE;
+      break;
+    case LOGID_ACC:
+      packet_size = ACC_T_SIZE;
+      break;
+    case LOGID_IMU:
+      packet_size = IMU_T_SIZE;
+      break;
+    default:
+      if(USBSERIAL_DEBUG) safePrintln("Invalid file id specified.");
+      return;
+      break;
     }
+
+    while(pack_size < SBD_TX_SZ){
+      input_size += packet_size;
+      // Grab a uniform sample of packets from the log file.
+      while( !sd_lock.lock(10) );
+      sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
+      sd_lock.unlock();
+
+      if(actual_read != input_size - offset){
+        // There are not enough packets in the logfile
+        break;
+      }
+      pack_size = pack(uc_buf, c_buf, input_size);
+    }
+    if(pack_size > SBD_TX_SZ){
+      input_size -= packet_size;
+      while( !sd_lock.lock(10) );
+      sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
+      sd_lock.unlock();
+    }
+    pack_size = pack(uc_buf, c_buf, input_size); 
+    while( !irbuf_lock.lock(10) );
+    memset(irbuf, '\0', SBD_TX_SZ);
+    memcpy(irbuf, c_buf, pack_size);
+    irbuf_lock.unlock();
+    if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
+    id_idx = (id_idx+1) % 3;
     threads.delay(500);
   }
 }
-
 
 /***********************************************************************************
    sleep thread
@@ -959,7 +986,7 @@ void tc_thread(int inc) {
     if ( mNeedSleep ) {
       if (USBSERIAL_DEBUG) safePrintln("TC: sleeping");
 
-      while ( !spi_lock.lock(10) );
+      while ( !spi_lock.lock(1000) );
       tc.disable();
       spi_lock.unlock();
 
@@ -984,7 +1011,7 @@ void tc_thread(int inc) {
           }
 
           // clear the sleep ready flag
-          while ( !sr_tc_lock.lock(10) );
+          while ( !sr_tc_lock.lock(1000) );
           sr_tc = false;
           sr_tc_lock.unlock();
           break;
@@ -1001,7 +1028,7 @@ void tc_thread(int inc) {
 //digitalWrite(LED_ACT, HIGH);
 
     // make call to TC interface
-    while ( !spi_lock.lock(10) );
+    while ( !spi_lock.lock(1000) );
     //safePrintln(String(safeMillis())+ "  TC: mutex was unlocked, got it ");
     bool gotData = tc.read_all(&mTcReadings, forceStart);
     spi_lock.unlock();
@@ -1458,8 +1485,7 @@ void iridium_thread(int inc) {
     sq_lock.unlock();
     mirready = mSq > 0;
     safeUpdate(&mBufReady, &irbuf_ready, &irbuf_lock);
-
-    // if the radio is ready and the buffer is full
+    
     if ( mirready && mBufReady ) {
       // Send the message
       if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending data buffer over iridium\r\n");
