@@ -72,7 +72,7 @@ void loop() {
   if( Serial.available() ){
     String cmd = Serial.readStringUntil('\n');
 
-    Serial.println("read in " + cmd);
+    //Serial.println("read in " + cmd);
 
     // send activation command packet
     if( cmd.equals("act") || cmd.equals("ACT") ){
@@ -86,6 +86,13 @@ void loop() {
       CommandPacket p(CMDID_IR_BP);
       station.send(&p, CAPSULE_ADDRESS);
       Serial.println("  sent build packet command");
+    }
+
+    // trigger capsule sleep
+    if( cmd.equals("sleep") || cmd.equals("SLEEP") ){
+      CommandPacket p(CMDID_SLEEP);
+      station.send(&p, CAPSULE_ADDRESS);
+      Serial.println("   sent sleep command");
     }
   }
   

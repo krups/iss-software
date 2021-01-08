@@ -27,13 +27,14 @@ ICM_20948_I2C myICM;
 // Load drivers for low power snooze library
 // don't load snoozeUSBSerial helper class unless we have usb debugging enabbled
 //SnoozeUSBSerial usb;
+SnoozeDigital   snoozeDigital;
 SnoozeSPI       snoozeSPI;
 SnoozeTimer     timer;
 #if USBSERIAL_DEBUG
 SnoozeUSBSerial snoozeSerial;
-SnoozeBlock     config_teensy35(snoozeSPI, timer, snoozeSerial);
+SnoozeBlock     config_teensy35(snoozeDigital, snoozeSPI, timer, snoozeSerial);
 #else
-SnoozeBlock     config_teensy35(snoozeSPI, timer);
+SnoozeBlock     config_teensy35(snoozeDigital, snoozeSPI, timer);
 #endif
 
 Threads::Mutex ns_lock; // need sleep lock, access to needSleep var
@@ -191,7 +192,7 @@ Threads::Mutex capVal_lock;
 #define DIAGNOSTICS false// Change this to see diagnostics
 #define SBD_TX_SZ 340
 IridiumSBD modem(Serial4);
-int signalQuality = -1;
+int signalQuality = 0;
 Threads::Mutex sq_lock;
 int irerr;
 //Threads::Mutex ircmd_lock;    // for giving commands to the iridium thread
@@ -205,6 +206,23 @@ Threads::Mutex irbuf_lock;
 volatile bool irbuf_ready = false;
 volatile uint8_t irbuf[SBD_TX_SZ];
 volatile int irbuf_len = 0;
+
+
+/************************
+ * THread IDs
+ */
+int tid_sd       = -1,
+    tid_telem    = -1,
+    tid_tc       = -1,
+    tid_acc      = -1,
+    tid_iridium  = -1,
+    tid_imu      = -1,
+    tid_command  = -1,
+    tid_compress = -1,
+    tid_cap      = -1,
+    tid_sleep    = -1,
+    tid_radio    = -1;
+// end thread IDs
 
 
 /**************************************************************************
@@ -676,7 +694,7 @@ void acc_thread(int inc) {
 
   bool tmss = false;
   unsigned long t = 0;
-  uint16_t x, y, z;
+  int x, y, z;
 
   while (1) {
     // get log timestamp
@@ -690,7 +708,7 @@ void acc_thread(int inc) {
     while ( !accq_lock.lock(100) ); // get lock for telem packet log queue
     if ( accq_count + 1 < MAX_ACCQ_SIZE ) {
       //if (USBSERIAL_DEBUG) safePrintln("creating acc packet for sd log");
-      accdataq[accq_write] = new AccPacket(x, y, z, t);
+      accdataq[accq_write] = new AccPacket((uint16_t)x, (uint16_t)y, (uint16_t)z, t);
       accq_write = (accq_write + 1) % MAX_ACCQ_SIZE;
       accq_count += 1;
     }
@@ -790,11 +808,12 @@ void compress_thread(int inc) {
 void sleep_thread(int inc) {
   // CONFIGURE SLEEP PARAMS
 
-  int  who;          // output of sleep function
+  int  who = -1;          // output of sleep function
   bool mAct = false; // our copy of activation status
   bool mDrp = false; // our copy of debug radio present;
   int  state = 0;    // state for pre-activation sleep routine
   int  sleepCount = 0; // for keeping track of longer periods of time
+  bool mNeedSleep = 0; // our copy of the global sleep control flag
 
   bool ss_radio = false,
        ss_tc    = false,
@@ -805,9 +824,6 @@ void sleep_thread(int inc) {
   if (USBSERIAL_DEBUG) safePrintln("SLEEP: starting sleep thread");
 
   threads.delay(10000);
-
-  timer.setTimer(10000);
-
 
   // SLEEP CONTROL prior to activation
   while (1) {
@@ -826,19 +842,33 @@ void sleep_thread(int inc) {
         // TODO:
         // need logic to prevent sleep thread starting sleep before we have had a
         // chance to make a TC measurement and update our decicision about activation
-        threads.delay(10000);
+        // this should be long enough to create our logs
+        threads.delay(SLEEP_TIME_AWAKE);
 
-        while ( !ns_lock.lock(10) );
-        needSleep = 1;
-        ns_lock.unlock();
-        if (USBSERIAL_DEBUG) safePrintln("SLEEP: requesting threads prepare for sleep");
-        syslog("SLEEP: requesting threads prepare for sleep");
-        state = 1;
+
+        // for testing, we will just idle in this state until receiving a debug command telling us to sleep
+        // this prevents early disconnects in serial logging etc
+//        if( MISSION_TYPE == MISSION_TEST_JSC || MISSION_TYPE == MISSION_TEST_SHUTTLE ){
+//          safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+//          if( mNeedSleep ){
+//            syslog("SLEEP: someone else initiated sleep, advancing to state 1");
+//            state = 1;
+//          }
+//        } 
+        
+        // for real mission, go to sleep after the initial delay specified above
+        //else  {
+          safeAssign(&needSleep, true, &ns_lock);
+          state = 1;
+        //}        
         break;
 
       // needing sleep, have to wait for each thread to be ready
       // need to be kind about checking status of each threads readiness
       case 1:
+
+        if (USBSERIAL_DEBUG) safePrintln("SLEEP: requesting threads prepare for sleep");
+
         // update our copy of each threads sleep status
         safeUpdate(&ss_radio, &sr_radio, &sr_radio_lock);
         safeUpdate(&ss_tc,    &sr_tc,    &sr_tc_lock);
@@ -865,27 +895,38 @@ void sleep_thread(int inc) {
       // all threads have prepared for sleep, lets do it
       case 2:
         // now we go to sleep
-        who = Snooze.hibernate( config_teensy35 ); // return module that woke processor
-        sleepCount += 1;
+        SLEEP:
+        who = Snooze.deepSleep( config_teensy35 ); // return module that woke processor
+        
+        // if we are woken up by the timer, increment the sleep count
+        if( who == 36 ){
+          sleepCount += 1;
 
-        // if we should go back to sleep, fall through and do state 2 again
-        if( sleepCount < 2 ){
-          break;
-        } 
-        // otherwise we're awake! let the threads know sleeping has finished... for now        
-        else {
-          while ( !ns_lock.lock(10) );
-          needSleep = 0;
-          ns_lock.unlock();
-  
-          if (USBSERIAL_DEBUG) safePrintln("SLEEP: WOKE UP AND SET NEED SLEEP = 0");
-          syslog("SLEEP: WOKE");
-  
-          // back to waiting on threds to sleep
-          state = 0;
-          sleepCount = 0;
-          break;
+          // if we should go back to sleep, fall through and do state 2 again
+          if( sleepCount < SLEEP_DURATION_MINUTES ){
+            goto SLEEP;
+          } 
         }
+
+        // if we were woken by a digital interrupt from the capacitance sensor
+        else if( who == PIN_CAPSENSE3 ){
+          syslog("SLEEP: woken by capsense");
+        }
+
+        else {
+          syslog("SLEEP: woken by unknown source: " + String(who));
+        }
+        
+        // otherwise we're awake! let the threads know sleeping has finished... for now        
+        safeAssign(&needSleep, false, &ns_lock);
+
+        if (USBSERIAL_DEBUG) safePrintln("SLEEP: WOKE UP BY: " + String(who));
+
+        // back to waiting on threds to sleep
+        state = 0;
+        sleepCount = 0;
+        break;
+      
     }
 
     threads.delay(50);
@@ -910,18 +951,22 @@ void command_thread(int inc) {
   syslog("CMDTHRD: starting");
 
   while(1){
-    
-    if( cmdPacket_lock.lock() ){
-      if( cmdPacketCount > 0 ){
-        for( int i=0; i < cmdPacketCount; i++ ){
-          switch( cmdPackets[i]->cmd() ){
 
+    // get access to the command packtet buffer
+    if( cmdPacket_lock.lock() ){
+
+      // if there are command packets to parse
+      if( cmdPacketCount > 0 ){
+
+        // loop through each packet
+        for( int i=0; i < cmdPacketCount; i++ ){
+
+          // decide packet action
+          switch( cmdPackets[i]->cmd() ){
 
             // SIMULATE AN ACTIVATION CONDITION
             case CMDID_ACTIVATE:
-              while( !act_lock.lock(10) );
-              activation = true;
-              act_lock.unlock();
+              safeAssign(&activation, true, &act_lock);
               if (USBSERIAL_DEBUG) safePrintln("CMDTHRD: manual activation detected");
               syslog("CMDTHRD: manual activation");
               break;
@@ -936,7 +981,13 @@ void command_thread(int inc) {
             case CMDID_IR_SP:
               //syslog("CMDTHRD: sending iridium packet");
               break;
-             
+
+            // PUT THE FLIGHT COMPUTER TO SLEEP
+            case CMDID_SLEEP:
+              syslog("CMDTHRD: recieved start sleep command");
+              safeAssign(&needSleep, true, &ns_lock);
+              break;
+              
             default:
               break;
           }
@@ -987,12 +1038,18 @@ void tc_thread(int inc) {
 
     // check if we need to prepare to sleep
     safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+    
     if ( mNeedSleep ) {
       if (USBSERIAL_DEBUG) safePrintln("TC: sleeping");
 
-      while ( !spi_lock.lock(10) );
-      tc.disable();
-      spi_lock.unlock();
+      // repeated calls to enable/disable seem to degrade th quality of the tc readings
+      // testing without disable/enable calls since the only part of these calls that would make 
+      // them necessary are making the spi and mux select pins high z for yielding control to the 
+      // safety processor, which we are not using
+      
+      // while ( !spi_lock.lock(10) );
+      // tc.disable();
+      // spi_lock.unlock();
 
       // safely let the sleep thread know we are ready
       while ( !sr_tc_lock.lock(1000) );
@@ -1005,14 +1062,16 @@ void tc_thread(int inc) {
         // if we woke up, enable the TCs again
         if ( !mNeedSleep ) {
           if (USBSERIAL_DEBUG) safePrintln("TC: waking up");
-          while ( !spi_lock.lock(1000) );
+
+          // see above comment about many tc enable/disable calls
+          /* while ( !spi_lock.lock(1000) );
           ret = tc.enable();
           spi_lock.unlock();
           if ( ret ) {
             if (USBSERIAL_DEBUG) safePrintln("TC: successfully reconfigured TC chips");
           } else {
             if (USBSERIAL_DEBUG) safePrintln("TC: [ERROR] could not reconfigure TC chips!");
-          }
+          } */
 
           // clear the sleep ready flag
           while ( !sr_tc_lock.lock(10) );
@@ -1062,9 +1121,7 @@ void tc_thread(int inc) {
           if (USBSERIAL_DEBUG) safePrintln("TC: DETECTED ACTIVATION");
           // log this over radio too
           mAct = true;
-          while ( !act_lock.lock(1000) );
-          activation = true;
-          act_lock.unlock();
+          safeAssign(&activation, true, &act_lock);
         }
       }
 
@@ -1298,12 +1355,14 @@ void telem_thread(int inc) {
   // get current logNum
   while ( !sd_lock.lock(1000) );
   while ( !spi_lock.lock(1000) );
-  uint8_t logNum = sdlog.logNum();
+  static uint8_t logNum = sdlog.logNum();
   spi_lock.unlock();
   sd_lock.unlock();
 
+  //if (USBSERIAL_DEBUG) safePrintln("TELEM: got logum of "+String(logNum));
+
   // signal quality of iridium modem
-  uint8_t s = 0;
+  static uint8_t s = 0;
 
   while (1) {
     // check for need to sleep and handle properly
@@ -1352,6 +1411,7 @@ void telem_thread(int inc) {
         logtelemq_count += 1;
       }
       logtelemq_lock.unlock();
+      //if (USBSERIAL_DEBUG) safePrintln("TELEM: got logum of "+String(logNum));
     }
 
     threads.delay(2000);
@@ -1453,33 +1513,6 @@ void iridium_thread(int inc) {
   while (1) {
     threads.delay(50);
 
-    /////////////////////
-    // helloe world command
-    /////////////////////
-//    if ( cmd == CMDID_IR_TEST ) {
-//      // Send the message
-//      if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending test iridium message. This might take several minutes.\r\n");
-//      analogWrite(LED_IR_TX, 20);
-//      irerr = modem.sendSBDText("Hello, world!");
-//      analogWrite(LED_IR_TX, 0);
-//      if (irerr != ISBD_SUCCESS)
-//      {
-//        if (USBSERIAL_DEBUG) safePrint("IRIDIUM: sendSBDText failed: error ");
-//        if (USBSERIAL_DEBUG) safePrintln(irerr);
-//        if (irerr == ISBD_SENDRECEIVE_TIMEOUT)
-//          if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: Try again with a better view of the sky.");
-//      }
-//
-//      else
-//      {
-//        if (USBSERIAL_DEBUG) safePrintln("*****************");
-//        if (USBSERIAL_DEBUG) safePrintln("*** TEST  SENT  *");
-//        if (USBSERIAL_DEBUG) safePrintln("*****************");
-//
-//        // clear command flag on success
-//        cmd = 0;
-//      }
-//    }
 
     ///////////////////
     // send data buffer command
@@ -1572,37 +1605,51 @@ void cap_thread(int inc) {
 
   // cap sense control 
   // this configuration supports an at42qt touch chip on a breakout board from adafruit
-  pinMode(PIN_CAPSENSE0, INPUT); // unused
+  // only one of the four pins on the capsense header is used 
+  pinMode(2, INPUT); // digital input 
 
-  // gnd connection
-  pinMode(PIN_CAPSENSE1, OUTPUT);
-  digitalWrite(PIN_CAPSENSE1, LOW);
 
-  // output of cap sensor
-  pinMode(PIN_CAPSENSE2, INPUT);
+  bool mAct = false;    // local copy of global activation status
+  bool mCapVal = false; // current gpio pin state
+
+  // previous readings of capacitive sense value, 
+  // must all agree for activation status to be updated
+  int histLen = 10;
+  uint8_t capHistory[histLen];
+  memset(capHistory, 0, sizeof(capHistory));
+
+  int pos = 0;
+
+  threads.delay(7000);
   
-  pinMode(PIN_CAPSENSE3, OUTPUT);
-  digitalWrite(PIN_CAPSENSE3, HIGH);
-
-
-  bool mAct = false;
-
-  bool mCapVal = false;
-  
-
   while (1) {
     safeUpdate(&mAct, &activation, &act_lock);
 
-    mCapVal = digitalRead(PIN_CAPSENSE2);
-    
-    if(USBSERIAL_DEBUG) safePrintln("CAP: capval="+String(mCapVal));
+    mCapVal = digitalRead(2);
 
-    safeUpdate(&capVal, &mCapVal, &capVal_lock);
+    capHistory[pos] = mCapVal;
+    pos = (pos + 1) % histLen;
+    
+    //if(USBSERIAL_DEBUG) safePrintln("CAP: capval="+String(mCapVal));
+
+    bool capAct = true;
+
+    for( int i=0; i<histLen; i++ ){
+      capAct = capHistory[i] && capAct;
+    }
+
+    // if we just detected activation and we aren't already activated, activate
+    if( capAct && !mAct ){
+      safePrintln("CAPTHRD: detected activation!");
+      safeUpdate(&activation, &capAct, &act_lock);
+
+      // idle infinitely now that we are activated, to give other threads more time
+      while(1) threads.yield();
+    }
 
     //digitalWrite(LED_ACT, mCapVal);
 
-    threads.delay(1000);
-    
+    threads.delay(100); // take cap sense readings at 10hz
   }
   
 }
@@ -1651,36 +1698,41 @@ void setup() {
   Wire.begin();
   Wire.setClock(400000);
 
+  // configure teensy snooze library classes
+  timer.setTimer(60000); // sleep one minute at a time
 
+  // configure interrupt to wake functionality for the sleep driver
+  // on the pin that connects to the capacitive sense pin
+  pinMode(2, INPUT);
+  snoozeDigital.pinMode(2, INPUT, RISING);//pin, mode, type
 
   delay(2000);
+  
 
-  // start necessary threads
-  // the '1' argument has no purpose :)
-  // third arg is stack size (default is 1k)
-  threads.addThread(sd_thread,      1, 4096);
-  threads.addThread(telem_thread,   1, 4096);
-  threads.addThread(tc_thread,      1, 4096);
-  threads.addThread(acc_thread,     1, 4096);
-  threads.addThread(iridium_thread, 1, 4096);
-  threads.addThread(imu_thread,     1, 4096);
-  threads.addThread(command_thread, 1, 4096);
-  threads.addThread(compress_thread,1, 4096);
-  threads.addThread(cap_thread,     1, 4096);
+  // start threads, the '1' argument has no purpose, third arg is stack size (default is 1k)
+  tid_sd       = threads.addThread(sd_thread,      1, 2048);
+  tid_telem    = threads.addThread(telem_thread,   1, 2048);
+  tid_tc       = threads.addThread(tc_thread,      1, 2048);
+  tid_acc      = threads.addThread(acc_thread,     1, 2048);
+  tid_iridium  = threads.addThread(iridium_thread, 1, 2048);
+  tid_imu      = threads.addThread(imu_thread,     1, 2048);
+  tid_command  = threads.addThread(command_thread, 1, 2048);
+  tid_compress = threads.addThread(compress_thread,1, 2048);
+  tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
-  //threads.addThread(sleep_thread,   1);
+  tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
 
   // start the radio thread if its powered on and enabled in config
   // TODO: this thread doesn't like being started first?????
   //   tried increasing the thread memory
-  //   all radio spi transactions are done in a mutex
+  //   all radio spi transactions are done in a mutexf
   //   haven't tested absolute order against TC thread which is
   //   the only other thread using spi...
   if ( ISM_DEBUG ) {
     if ( digitalRead(PIN_ISM_PRESENT) ) {
       if (USBSERIAL_DEBUG) safePrintln("ISM: present");
       debugRadioPresent = true;
-      threads.addThread(radio_thread, 1, 20000);
+      tid_radio = threads.addThread(radio_thread, 1, 10000);
     } else {
       debugRadioPresent = false;
       if (USBSERIAL_DEBUG) safePrintln("ISM: NOT PRESENT");
