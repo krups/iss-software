@@ -804,6 +804,7 @@ void compress_thread(int inc) {
       while( !irbuf_lock.lock(10) );
       memcpy(irbuf, c_buf, pack_size);
       irbuf_len = pack_size;
+      irbuf_ready = true;
       irbuf_lock.unlock();
       if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
       id_idx = (id_idx+1) % 3;
