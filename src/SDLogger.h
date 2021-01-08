@@ -173,7 +173,7 @@ public:
       safePrintln("error opening file");
       return;
     }
-    safePrint("wanting "); safePrint(sizeRequest); safePrintln("bytes");
+    //safePrint("wanting "); safePrint(sizeRequest); safePrintln("bytes");
     char type_buf[1];
     _fh.read(type_buf, 1);
     _fh.seek(0);
@@ -203,25 +203,30 @@ public:
     }
     packet_size += 1; // for packet ID char
     
-    safePrint("packet size is "); safePrint(packet_size); safePrintln(" bytes");
+    //safePrint("packet size is "); safePrint(packet_size); safePrintln(" bytes");
     
     unsigned long num_samples_needed = floor((float)sizeRequest/((float)packet_size));
     unsigned long num_packets_available = (unsigned long)floor(((float)_fh.size())/((float)packet_size));
+    
+    if( num_packets_available < num_samples_needed ){
+      num_samples_needed = num_packets_available;
+    }
+    
     unsigned long interval = (unsigned long)floor(((float)num_packets_available)/((float)num_samples_needed));
     
-    safePrint("num_samples_needed:    "); safePrintln(num_samples_needed);
-    safePrint("num_packets_available: "); safePrintln(num_packets_available);
-    safePrint("interval:              "); safePrintln(interval);
+    //safePrint("num_samples_needed:    "); safePrintln(num_samples_needed);
+    //safePrint("num_packets_available: "); safePrintln(num_packets_available);
+    //safePrint("interval:              "); safePrintln(interval);
     int i=0;
     for( i = 0; i < num_samples_needed; i++ ){
       int loc = i*packet_size*interval;
-      safePrint("  seeking to "); safePrintln(loc);
+      //safePrint("  seeking to "); safePrintln(loc);
       _fh.seek(loc);
-      safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
+      //safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
       _fh.read(&sam_buf[i*(packet_size)], packet_size);
     }
     
-    *sizeActual = (i * packet_size) - 1;
+    *sizeActual = (i * packet_size);
     
     _fh.close();
 

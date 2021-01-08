@@ -793,6 +793,7 @@ void compress_thread(int inc) {
         }
         pack_size = pack(uc_buf, c_buf, input_size);
         safePrintln("Pack size: " + String(pack_size));
+        threads.yield();
       }
       if(pack_size > SBD_TX_SZ){
         input_size -= packet_size;
@@ -807,6 +808,7 @@ void compress_thread(int inc) {
       irbuf_ready = true;
       irbuf_lock.unlock();
       if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
+      if(USBSERIAL_DEBUG) safePrintln("Compressed size: " + String(pack_size)  + "bytes");
       id_idx = (id_idx+1) % 3;
       
       mBuildPacket = false;
@@ -862,18 +864,18 @@ void sleep_thread(int inc) {
 
         // for testing, we will just idle in this state until receiving a debug command telling us to sleep
         // this prevents early disconnects in serial logging etc
-//        if( MISSION_TYPE == MISSION_TEST_JSC || MISSION_TYPE == MISSION_TEST_SHUTTLE ){
-//          safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
-//          if( mNeedSleep ){
-//            syslog("SLEEP: someone else initiated sleep, advancing to state 1");
-//            state = 1;
-//          }
-//        } 
+        if( MISSION_TYPE == MISSION_TEST_JSC || MISSION_TYPE == MISSION_TEST_SHUTTLE ){
+          safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+          if( mNeedSleep ){
+            syslog("SLEEP: someone else initiated sleep, advancing to state 1");
+            state = 1;
+          }
+        } 
         
         // for real mission, go to sleep after the initial delay specified above
         //else  {
-          //safeAssign(&needSleep, true, &ns_lock);
-          //state = 1;
+        safeAssign(&needSleep, true, &ns_lock);
+        state = 1;
         //}        
         break;
 
@@ -1731,7 +1733,7 @@ void setup() {
   tid_iridium  = threads.addThread(iridium_thread, 1, 2048);
   tid_imu      = threads.addThread(imu_thread,     1, 2048);
   tid_command  = threads.addThread(command_thread, 1, 2048);
-  tid_compress = threads.addThread(compress_thread,1, 20000);
+  tid_compress = threads.addThread(compress_thread,1, 70000);
   tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
   tid_sleep    = threads.addThread(sleep_thread,   1, 2048);

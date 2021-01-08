@@ -60,7 +60,7 @@ typedef uint32_t blz_word;
 // compromise.
 //
 #ifndef BLZ_HASH_BITS
-#  define BLZ_HASH_BITS 12
+#  define BLZ_HASH_BITS 14
 #endif
 
 #define LOOKUP_SIZE (1UL << BLZ_HASH_BITS)
