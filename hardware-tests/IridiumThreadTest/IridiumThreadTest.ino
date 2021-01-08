@@ -721,61 +721,65 @@ void compress_thread(int inc) {
   size_t input_size = 0;
   size_t actual_read;
   unsigned int id_idx = 0;
+  bool mBuildPacket = false;
 
   while(1){
-    // Get latest telem packet first
-    while( !sd_lock.lock(10) );
-    sdlog.latest_packet(LOGID_TELEM, uc_buf);
-    sd_lock.unlock();
-
-    uint8_t offset = TELEM_T_SIZE + 1;
-    input_size += offset;
-    pack_size = pack(uc_buf, c_buf, input_size);
-
-    size_t packet_size;
-    switch (log_ids[id_idx])
-    {
-    case LOGID_TC:
-      packet_size = TC_T_SIZE;
-      break;
-    case LOGID_ACC:
-      packet_size = ACC_T_SIZE;
-      break;
-    case LOGID_IMU:
-      packet_size = IMU_T_SIZE;
-      break;
-    default:
-      if(USBSERIAL_DEBUG) safePrintln("Invalid file id specified.");
-      return;
-      break;
-    }
-
-    while(pack_size < SBD_TX_SZ){
-      input_size += packet_size;
-      // Grab a uniform sample of packets from the log file.
+    safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
+    if( mBuildPacket ){
+      // Get latest telem packet first
       while( !sd_lock.lock(10) );
-      sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
+      sdlog.latest_packet(LOGID_TELEM, uc_buf);
       sd_lock.unlock();
 
-      if(actual_read != input_size - offset){
-        // There are not enough packets in the logfile
+      uint8_t offset = TELEM_T_SIZE + 1;
+      input_size += offset;
+      pack_size = pack(uc_buf, c_buf, input_size);
+
+      size_t packet_size;
+      switch (log_ids[id_idx])
+      {
+      case LOGID_TC:
+        packet_size = TC_T_SIZE;
+        break;
+      case LOGID_ACC:
+        packet_size = ACC_T_SIZE;
+        break;
+      case LOGID_IMU:
+        packet_size = IMU_T_SIZE;
+        break;
+      default:
+        if(USBSERIAL_DEBUG) safePrintln("Invalid file id specified.");
+        return;
         break;
       }
-      pack_size = pack(uc_buf, c_buf, input_size);
+
+      while(pack_size < SBD_TX_SZ){
+        input_size += packet_size;
+        // Grab a uniform sample of packets from the log file.
+        while( !sd_lock.lock(10) );
+        sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
+        sd_lock.unlock();
+
+        if(actual_read != input_size - offset){
+          // There are not enough packets in the logfile
+          break;
+        }
+        pack_size = pack(uc_buf, c_buf, input_size);
+      }
+      if(pack_size > SBD_TX_SZ){
+        input_size -= packet_size;
+        while( !sd_lock.lock(10) );
+        sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
+        sd_lock.unlock();
+      }
+      pack_size = pack(uc_buf, c_buf, input_size); 
+      while( !irbuf_lock.lock(10) );
+      memcpy(irbuf, c_buf, pack_size);
+      irbuf_len = pack_size;
+      irbuf_lock.unlock();
+      if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
+      id_idx = (id_idx+1) % 3;
     }
-    if(pack_size > SBD_TX_SZ){
-      input_size -= packet_size;
-      while( !sd_lock.lock(10) );
-      sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
-      sd_lock.unlock();
-    }
-    pack_size = pack(uc_buf, c_buf, input_size); 
-    while( !irbuf_lock.lock(10) );
-    memset(irbuf, '\0', SBD_TX_SZ);
-    memcpy(irbuf, c_buf, pack_size);
-    irbuf_lock.unlock();
-    if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
-    id_idx = (id_idx+1) % 3;
     threads.delay(500);
   }
 }
@@ -1375,6 +1379,7 @@ void iridium_thread(int inc) {
   unsigned long curMillis = 0;
   unsigned long signalCheckInterval = 15000;
   unsigned long lastSignalCheck = 0;
+  uint8_t irbuf_internal[SBD_TX_SZ];
 
   // pre activation routine
   while (1) {
@@ -1493,11 +1498,13 @@ void iridium_thread(int inc) {
       syslog("IRIDIUM: sending data buffer");
       analogWrite(LED_IR_TX, 20);
 
-      // TODO: copy this locally so that other threads can start filling up another packet
-      //       while the iridium thread sends the current one.
+      // copy the packet locally so that other threads can start filling up another packet
+      // while the iridium thread sends the current one.
       while( !irbuf_lock.lock(100) );
-      irerr = modem.sendSBDBinary(irbuf, irbuf_len);
+      memcpy(irbuf_internal,irbuf, irbuf_len);
       irbuf_lock.unlock();
+
+      irerr = modem.sendSBDBinary(irbuf_internal, irbuf_len);
       
       analogWrite(LED_IR_TX, 0);
       if (irerr != ISBD_SUCCESS)
