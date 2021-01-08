@@ -50,7 +50,7 @@
 // ground trial setup for shuttle tile TPS capsules
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_SHUTTLE)
-  #define USBSERIAL_DEBUG      0
+  #define USBSERIAL_DEBUG      1
   #define ISM_DEBUG            1
   #define TC_COUNT             4
   #define TC_THRESHOLD         100.0 // degrees celcius
@@ -123,5 +123,5 @@
 * SLEEP CONFIG
 */
 #define SLEEP_TIME_AWAKE              (int)10000 //when the sleep thread wakes up, stay awake for this long
-#define SLEEP_DURATION_MINUTES    30
+#define SLEEP_DURATION_MINUTES    2
 #endif

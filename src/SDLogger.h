@@ -268,9 +268,9 @@ public:
     }
     packet_size += 1;
     unsigned int start_loc = _fh.size() -  packet_size;
-    safePrint("  seeking to "); safePrintln(start_loc);
+    //safePrint("  seeking to "); safePrintln(start_loc);
     _fh.seek(start_loc);
-    safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
+    //safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
     _fh.read(sam_buf, packet_size);
     _fh.close();
 } 

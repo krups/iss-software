@@ -797,6 +797,9 @@ void compress_thread(int inc) {
       irbuf_lock.unlock();
       if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
       id_idx = (id_idx+1) % 3;
+      
+      mBuildPacket = false;
+      safeAssign(&buildPacket, false, &buildPacket_lock);
     }
     threads.delay(500);
   }
@@ -858,8 +861,8 @@ void sleep_thread(int inc) {
         
         // for real mission, go to sleep after the initial delay specified above
         //else  {
-          safeAssign(&needSleep, true, &ns_lock);
-          state = 1;
+          //safeAssign(&needSleep, true, &ns_lock);
+          //state = 1;
         //}        
         break;
 
@@ -1717,7 +1720,7 @@ void setup() {
   tid_iridium  = threads.addThread(iridium_thread, 1, 2048);
   tid_imu      = threads.addThread(imu_thread,     1, 2048);
   tid_command  = threads.addThread(command_thread, 1, 2048);
-  tid_compress = threads.addThread(compress_thread,1, 2048);
+  tid_compress = threads.addThread(compress_thread,1, 20000);
   tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
   tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
