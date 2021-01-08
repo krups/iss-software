@@ -736,7 +736,7 @@ void compress_thread(int inc) {
   // Uncompressed buffer
   uint8_t uc_buf[2*SBD_TX_SZ];
   unsigned int id_idx = 0;
-  bool mBuildPacket  false;
+  bool mBuildPacket = false;
 
   while(1){
     size_t pack_size = 0;
@@ -752,9 +752,9 @@ void compress_thread(int inc) {
       uint8_t offset = TELEM_T_SIZE + 1;
       input_size += offset;
       pack_size = pack(uc_buf, c_buf, input_size);
+      safePrintln("Compressed " + String(input_size) + " bytes into " + String(pack_size));
 
       size_t packet_size;
-
 
       switch (log_ids[id_idx])
       {
@@ -776,6 +776,9 @@ void compress_thread(int inc) {
       packet_size += 1; // Account for char denoting which type of packet
 
       while(pack_size < SBD_TX_SZ){
+        safePrint("Input size: " + String(input_size));
+        safePrint(", packet size: " + String(packet_size));
+        safePrintln(", Offset: " + String(offset));
         input_size += packet_size;
         // Grab a uniform sample of packets from the log file.
         while( !sd_lock.lock(10) );
@@ -784,9 +787,12 @@ void compress_thread(int inc) {
 
         if(actual_read != input_size - offset){
           // There are not enough packets in the logfile
+          safePrintln("Not enough packets in logfile. Requested: " + 
+            String(input_size - offset) + " bytes, actually read " + String(actual_read));
           break;
         }
         pack_size = pack(uc_buf, c_buf, input_size);
+        safePrintln("Pack size: " + String(pack_size));
       }
       if(pack_size > SBD_TX_SZ){
         input_size -= packet_size;
