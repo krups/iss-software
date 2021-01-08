@@ -119,5 +119,9 @@
 #define MAX_IMUQ_SIZE           10
 #define MAX_TELEMQ_SIZE         10
 
-
+/************************************************************************************************
+* SLEEP CONFIG
+*/
+#define SLEEP_TIME_AWAKE              (int)10000 //when the sleep thread wakes up, stay awake for this long
+#define SLEEP_DURATION_MINUTES    30
 #endif

@@ -11,6 +11,7 @@
 #define CMDID_IR_SP             4       // send packet
 #define CMDID_IR_TEST           5       // send a "hello world" packet
 #define CMDID_ACTIVATE          6       // simulate activation
+#define CMDID_SLEEP             7       // for testing, initiate sleeep
 
 // logging
 #define CMD_ID_START_ISMLOG     51

@@ -53,8 +53,8 @@
 #endif
 
 
-#define PIN_CAPSENSE0       1		            // input, read with touchRead(pin)
-#define PIN_CAPSENSE1       0	              // input, read with touchRead(pin)
+#define PIN_CAPSENSE0       0		            // input, read with touchRead(pin)
+#define PIN_CAPSENSE1       1	              // input, read with touchRead(pin)
 #define PIN_CAPSENSE2       15	            // input, read with touchRead(pin)
 #define PIN_CAPSENSE3	      30              // input, read with touchRead(pin)
 

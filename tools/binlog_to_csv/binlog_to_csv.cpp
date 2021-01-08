@@ -11,7 +11,7 @@ typedef uint8_t byte;
 
 #include "packets.h"
 
-#define DEBUG 1
+#define DEBUG 0
 
 void usage(char** argv);
 
