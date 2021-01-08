@@ -50,7 +50,7 @@
 // ground trial setup for shuttle tile TPS capsules
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_SHUTTLE)
-  #define USBSERIAL_DEBUG      1
+  #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            1
   #define TC_COUNT             4
   #define TC_THRESHOLD         100.0 // degrees celcius
