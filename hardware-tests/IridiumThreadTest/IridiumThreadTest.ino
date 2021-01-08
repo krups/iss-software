@@ -735,13 +735,13 @@ void compress_thread(int inc) {
   uint8_t c_buf[SBD_TX_SZ];
   // Uncompressed buffer
   uint8_t uc_buf[2*SBD_TX_SZ];
-  size_t pack_size = 0;
-  size_t input_size = 0;
-  size_t actual_read;
   unsigned int id_idx = 0;
-  bool mBuildPacket = false;
+  bool mBuildPacket  false;
 
   while(1){
+    size_t pack_size = 0;
+    size_t input_size = 0;
+    size_t actual_read;
     safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
     if( mBuildPacket ){
       // Get latest telem packet first
@@ -754,6 +754,8 @@ void compress_thread(int inc) {
       pack_size = pack(uc_buf, c_buf, input_size);
 
       size_t packet_size;
+
+
       switch (log_ids[id_idx])
       {
       case LOGID_TC:
@@ -766,10 +768,12 @@ void compress_thread(int inc) {
         packet_size = IMU_T_SIZE;
         break;
       default:
-        if(USBSERIAL_DEBUG) safePrintln("Invalid file id specified.");
-        return;
+        if(USBSERIAL_DEBUG) safePrintln("Invalid file id specified. Defaulting to TC.");
+        packet_size = TC_T_SIZE;
         break;
       }
+
+      packet_size += 1; // Account for char denoting which type of packet
 
       while(pack_size < SBD_TX_SZ){
         input_size += packet_size;
