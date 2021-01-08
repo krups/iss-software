@@ -864,6 +864,7 @@ void sleep_thread(int inc) {
       // all threads have prepared for sleep, lets do it
       case 2:
         // now we go to sleep
+        SLEEP:
         who = Snooze.deepSleep( config_teensy35 ); // return module that woke processor
         
         // if we are woken up by the timer, increment the sleep count
@@ -872,7 +873,7 @@ void sleep_thread(int inc) {
 
           // if we should go back to sleep, fall through and do state 2 again
           if( sleepCount < SLEEP_DURATION_MINUTES ){
-            break;
+            goto SLEEP;
           } 
         }
 
@@ -1675,17 +1676,17 @@ void setup() {
   
 
   // start threads, the '1' argument has no purpose, third arg is stack size (default is 1k)
-  tid_sd       = threads.addThread(sd_thread,      1, 4096);
-  tid_telem    = threads.addThread(telem_thread,   1, 4096);
-  tid_tc       = threads.addThread(tc_thread,      1, 4096);
-  tid_acc      = threads.addThread(acc_thread,     1, 4096);
-  tid_iridium  = threads.addThread(iridium_thread, 1, 4096);
-  tid_imu      = threads.addThread(imu_thread,     1, 4096);
-  tid_command  = threads.addThread(command_thread, 1, 4096);
-  tid_compress = threads.addThread(compress_thread,1, 4096);
-  tid_cap      = threads.addThread(cap_thread,     1, 4096);
+  tid_sd       = threads.addThread(sd_thread,      1, 2048);
+  tid_telem    = threads.addThread(telem_thread,   1, 2048);
+  tid_tc       = threads.addThread(tc_thread,      1, 2048);
+  tid_acc      = threads.addThread(acc_thread,     1, 2048);
+  tid_iridium  = threads.addThread(iridium_thread, 1, 2048);
+  tid_imu      = threads.addThread(imu_thread,     1, 2048);
+  tid_command  = threads.addThread(command_thread, 1, 2048);
+  tid_compress = threads.addThread(compress_thread,1, 2048);
+  tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
-  tid_sleep = threads.addThread(sleep_thread,   1);
+  tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
 
   // start the radio thread if its powered on and enabled in config
   // TODO: this thread doesn't like being started first?????
@@ -1697,7 +1698,7 @@ void setup() {
     if ( digitalRead(PIN_ISM_PRESENT) ) {
       if (USBSERIAL_DEBUG) safePrintln("ISM: present");
       debugRadioPresent = true;
-      tid_radio = threads.addThread(radio_thread, 1, 20000);
+      tid_radio = threads.addThread(radio_thread, 1, 10000);
     } else {
       debugRadioPresent = false;
       if (USBSERIAL_DEBUG) safePrintln("ISM: NOT PRESENT");
