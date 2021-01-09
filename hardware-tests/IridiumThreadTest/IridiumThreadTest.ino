@@ -744,15 +744,17 @@ void compress_thread(int inc) {
     size_t actual_read;
     safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
     if( mBuildPacket ){
+      syslog("COMPRESS: starting to compress data");
       // Get latest telem packet first
-      while( !sd_lock.lock(10) );
-      sdlog.latest_packet(LOGID_TELEM, uc_buf);
-      sd_lock.unlock();
+      //while( !sd_lock.lock(10) );
+      //sdlog.latest_packet(LOGID_TELEM, uc_buf);
+      //sd_lock.unlock();
 
-      uint8_t offset = TELEM_T_SIZE + 1;
+      //uint8_t offset = TELEM_T_SIZE + 1;
+      uint8_t offset = 0;
       input_size += offset;
-      pack_size = pack(uc_buf, c_buf, input_size);
-      safePrintln("Compressed " + String(input_size) + " bytes into " + String(pack_size));
+      //pack_size = pack(uc_buf, c_buf, input_size);
+      //safePrintln("Compressed " + String(input_size) + " bytes into " + String(pack_size));
 
       size_t packet_size;
 
@@ -810,6 +812,8 @@ void compress_thread(int inc) {
       if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
       if(USBSERIAL_DEBUG) safePrintln("Compressed size: " + String(pack_size)  + "bytes");
       id_idx = (id_idx+1) % 3;
+
+      syslog("COMPRESS: filled iridium buffer,comp size: " + String(pack_size)  + " bytes, orig size: " + String(input_size));
       
       mBuildPacket = false;
       safeAssign(&buildPacket, false, &buildPacket_lock);
@@ -871,12 +875,12 @@ void sleep_thread(int inc) {
             state = 1;
           }
         } 
-        
-        // for real mission, go to sleep after the initial delay specified above
-        //else  {
-        safeAssign(&needSleep, true, &ns_lock);
-        state = 1;
-        //}        
+
+        if( CONFIG_AUTOMATIC_SLEEP ){        
+          // for real mission, go to sleep after the initial delay specified above
+          safeAssign(&needSleep, true, &ns_lock);
+          state = 1;
+        }        
         break;
 
       // needing sleep, have to wait for each thread to be ready
@@ -925,7 +929,7 @@ void sleep_thread(int inc) {
         }
 
         // if we were woken by a digital interrupt from the capacitance sensor
-        else if( who == PIN_CAPSENSE3 ){
+        else if( who == 2 ){
           syslog("SLEEP: woken by capsense");
         }
 
@@ -964,6 +968,8 @@ void sleep_thread(int inc) {
 
 void command_thread(int inc) {
 
+  threads.delay(5000);
+  
   syslog("CMDTHRD: starting");
 
   while(1){
@@ -1187,7 +1193,7 @@ void radio_thread(int inc) {
 
   while ( !spi_lock.lock(1000) );
   ret = logNode.begin();
-  logNode.setRetries(2);
+  logNode.setRetries(1);
   spi_lock.unlock();
 
   if ( ret ) {
@@ -1323,6 +1329,8 @@ void radio_thread(int inc) {
         
         newData = false;
         int np = logNode.decodePackets();
+
+        syslog("RADIO: recieved" + String(np) + " new packet(s)");
         
         // if it is in the packet buffer, copy it to the command buffer
         if( np > 0 ){
@@ -1344,6 +1352,8 @@ void radio_thread(int inc) {
 
           logNode.deletePackets();
         }
+      } else  {
+        syslog("RADIO: failed to recieve packet");
       }
 
     } 
@@ -1451,6 +1461,7 @@ void iridium_thread(int inc) {
 
   bool mAct = false;
   bool mBufReady=false, mirready=false;
+  int mBufLen = 0;
   int mSq = 0;
   unsigned long curMillis = 0;
   unsigned long signalCheckInterval = 15000;
@@ -1538,6 +1549,7 @@ void iridium_thread(int inc) {
     signalQuality = mSq;
     sq_lock.unlock();
     mirready = mSq > 0;
+    
     safeUpdate(&mBufReady, &irbuf_ready, &irbuf_lock);
     
     // if the radio is ready and the buffer is full
@@ -1550,10 +1562,11 @@ void iridium_thread(int inc) {
       // copy the packet locally so that other threads can start filling up another packet
       // while the iridium thread sends the current one.
       while( !irbuf_lock.lock(100) );
-      memcpy(irbuf_internal,irbuf, irbuf_len);
+      memcpy(irbuf_internal, irbuf, irbuf_len);
+      mBufLen = irbuf_len;
       irbuf_lock.unlock();
 
-      irerr = modem.sendSBDBinary(irbuf_internal, irbuf_len);
+      irerr = modem.sendSBDBinary(irbuf_internal, mBufLen);
       
       analogWrite(LED_IR_TX, 0);
       if (irerr != ISBD_SUCCESS)
@@ -1571,7 +1584,9 @@ void iridium_thread(int inc) {
         if (USBSERIAL_DEBUG) safePrintln("*****************");
         if (USBSERIAL_DEBUG) safePrintln("*** SENT PACKET *");
         if (USBSERIAL_DEBUG) safePrintln("*****************");
-
+        
+        mBufReady = false;
+        safeAssign(&irbuf_ready, false, &irbuf_lock);
         syslog("IRIDIUM: sent binary packet");
       }
     }
@@ -1726,17 +1741,17 @@ void setup() {
   
 
   // start threads, the '1' argument has no purpose, third arg is stack size (default is 1k)
-  tid_sd       = threads.addThread(sd_thread,      1, 2048);
-  tid_telem    = threads.addThread(telem_thread,   1, 2048);
-  tid_tc       = threads.addThread(tc_thread,      1, 2048);
-  tid_acc      = threads.addThread(acc_thread,     1, 2048);
-  tid_iridium  = threads.addThread(iridium_thread, 1, 2048);
-  tid_imu      = threads.addThread(imu_thread,     1, 2048);
-  tid_command  = threads.addThread(command_thread, 1, 2048);
+  tid_sd       = threads.addThread(sd_thread,      1, 4096);
+  tid_telem    = threads.addThread(telem_thread,   1, 4096);
+  tid_tc       = threads.addThread(tc_thread,      1, 8192);
+  tid_acc      = threads.addThread(acc_thread,     1, 4096);
+  tid_iridium  = threads.addThread(iridium_thread, 1, 4096);
+  tid_imu      = threads.addThread(imu_thread,     1, 4096);
+  tid_command  = threads.addThread(command_thread, 1, 4096);
   tid_compress = threads.addThread(compress_thread,1, 70000);
-  tid_cap      = threads.addThread(cap_thread,     1, 2048);
+  tid_cap      = threads.addThread(cap_thread,     1, 4096);
 
-  tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
+  tid_sleep    = threads.addThread(sleep_thread,   1, 4096);
 
   // start the radio thread if its powered on and enabled in config
   // TODO: this thread doesn't like being started first?????
@@ -1748,7 +1763,7 @@ void setup() {
     if ( digitalRead(PIN_ISM_PRESENT) ) {
       if (USBSERIAL_DEBUG) safePrintln("ISM: present");
       debugRadioPresent = true;
-      tid_radio = threads.addThread(radio_thread, 1, 10000);
+      tid_radio = threads.addThread(radio_thread, 1, 30000);
     } else {
       debugRadioPresent = false;
       if (USBSERIAL_DEBUG) safePrintln("ISM: NOT PRESENT");
@@ -1757,7 +1772,7 @@ void setup() {
     debugRadioPresent = false;
   }
 
-  threads.setSliceMillis(5);
+  threads.setSliceMillis(10);
 }
 
 void loop() {

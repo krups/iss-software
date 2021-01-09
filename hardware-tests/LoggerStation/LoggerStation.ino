@@ -48,6 +48,8 @@ void setup()
     digitalWrite(LED, LOW);
     Serial.println("radio failed to init");
   }
+
+  station.setRetries(2);
 }
 
 void loop() {

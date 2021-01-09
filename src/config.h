@@ -122,6 +122,7 @@
 /************************************************************************************************
 * SLEEP CONFIG
 */
-#define SLEEP_TIME_AWAKE              (int)10000 //when the sleep thread wakes up, stay awake for this long
-#define SLEEP_DURATION_MINUTES    2
+#define CONFIG_AUTOMATIC_SLEEP  0
+#define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
+#define SLEEP_DURATION_MINUTES  30
 #endif
