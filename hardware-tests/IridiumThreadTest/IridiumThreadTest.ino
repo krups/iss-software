@@ -742,20 +742,29 @@ void compress_thread(int inc) {
     size_t pack_size = 0;
     size_t input_size = 0;
     size_t actual_read;
+    
     safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
+    
     if( mBuildPacket ){
+      
       syslog("COMPRESS: starting to compress data");
+      
       // Get latest telem packet first
-      //while( !sd_lock.lock(10) );
-      //sdlog.latest_packet(LOGID_TELEM, uc_buf);
-      //sd_lock.unlock();
+      while( !sd_lock.lock(10) );
+      sdlog.latest_packet(LOGID_TELEM, uc_buf);
+      sd_lock.unlock();
 
-      //uint8_t offset = TELEM_T_SIZE + 1;
-      uint8_t offset = 0;
+      uint8_t offset = TELEM_T_SIZE + 1;
+      
       input_size += offset;
+
+      // does compressing this first
       //pack_size = pack(uc_buf, c_buf, input_size);
       //safePrintln("Compressed " + String(input_size) + " bytes into " + String(pack_size));
 
+
+      // now calculate the size of the packets we will be adding to the uncompressed buffer 
+      // based on type char
       size_t packet_size;
 
       switch (log_ids[id_idx])
@@ -777,38 +786,72 @@ void compress_thread(int inc) {
 
       packet_size += 1; // Account for char denoting which type of packet
 
+      // keep increasing the input_size number of bytes that we request from a given logfile
+      // until the compressed size of those packets will not fit into the iridium buf. when the 
+      // compressed size exeeds that limit, start decreasing the number of samples requested until 
+      // able to send
       while(pack_size < SBD_TX_SZ){
-        safePrint("Input size: " + String(input_size));
-        safePrint(", packet size: " + String(packet_size));
-        safePrintln(", Offset: " + String(offset));
+        
         input_size += packet_size;
+        
         // Grab a uniform sample of packets from the log file.
         while( !sd_lock.lock(10) );
         sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
         sd_lock.unlock();
 
+        // if there are not enough samples in the specified logfile, just use what is available
+        // compress the uncompressed buffer into the compressed buffer to calculate packed size
+        // using the correct buffer size if a short read ocurred
         if(actual_read != input_size - offset){
+          pack_size = pack(uc_buf, c_buf, actual_read + offset);
+          
           // There are not enough packets in the logfile
           safePrintln("Not enough packets in logfile. Requested: " + 
             String(input_size - offset) + " bytes, actually read " + String(actual_read));
-          break;
+        } 
+        // got as many bytes as expected
+        else {
+          pack_size = pack(uc_buf, c_buf, input_size);
         }
-        pack_size = pack(uc_buf, c_buf, input_size);
+        
+        safePrint("Input size: " + String(input_size));
+        safePrint(", packet size: " + String(packet_size));
+        safePrintln(", Offset: " + String(offset));
         safePrintln("Pack size: " + String(pack_size));
+
+        // yield here otherwise file logging and this thread deadlock on sd_lock (?)
         threads.yield();
       }
-      if(pack_size > SBD_TX_SZ){
+
+      // if our packed size won't fit in an iridium buffer, start scaling back
+      while (pack_size > SBD_TX_SZ){
         input_size -= packet_size;
+
+        // resample log file
         while( !sd_lock.lock(10) );
         sdlog.sample(log_ids[id_idx], uc_buf+offset, input_size - offset, &actual_read);
         sd_lock.unlock();
+
+        // if we got a short read again, let the pack function know the right buffer size
+        if( (input_size - offset) != actual_read ){
+          // recalc packed size
+          pack_size = pack(uc_buf, c_buf, actual_read + offset);         
+        } 
+        
+        // if it wasn't a short read,  use the expected size 
+        else {
+          // recalc packed size
+          pack_size = pack(uc_buf, c_buf, input_size);
+        }  
       }
-      pack_size = pack(uc_buf, c_buf, input_size); 
+      
+      
       while( !irbuf_lock.lock(10) );
       memcpy(irbuf, c_buf, pack_size);
       irbuf_len = pack_size;
       irbuf_ready = true;
       irbuf_lock.unlock();
+      
       if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
       if(USBSERIAL_DEBUG) safePrintln("Compressed size: " + String(pack_size)  + "bytes");
       id_idx = (id_idx+1) % 3;
@@ -1199,7 +1242,7 @@ void radio_thread(int inc) {
   if ( ret ) {
     if (USBSERIAL_DEBUG) safePrintln("ISM: log node started");
     syslog("ISM: log node started");
-    analogWrite(LED_ISM_TX, 5); // dim lit
+    if( CONFIG_USE_LEDS) analogWrite(LED_ISM_TX, 5); // dim lit
   } else {
     if (USBSERIAL_DEBUG) safePrintln("ISM: log node failed to start, idling thread");
     syslog("ISM: log node failed to start, idling thread");
@@ -1247,7 +1290,7 @@ void radio_thread(int inc) {
     if( newData ){
       // get SPI mutex and send packet over radio
       //if (USBSERIAL_DEBUG) safePrintln("ISM:  about to send ism packet");
-      analogWrite(LED_ISM_TX, 100);
+      if( CONFIG_USE_LEDS) analogWrite(LED_ISM_TX, 100);
 
       sent = false;
       while ( !sent ) {
@@ -1265,7 +1308,7 @@ void radio_thread(int inc) {
         }
       }
       delete p;
-      analogWrite(LED_ISM_TX, 5);
+      if( CONFIG_USE_LEDS) analogWrite(LED_ISM_TX, 5);
     }
 
     // telem radio log
@@ -1288,7 +1331,7 @@ void radio_thread(int inc) {
     
     // send new telem packet if there is one
     if ( newData ) {
-      analogWrite(LED_ISM_TX, 100);
+      if( CONFIG_USE_LEDS) analogWrite(LED_ISM_TX, 100);
       sent = false;
       while ( !sent ) {
         if (  spi_lock.lock(1000) ) {
@@ -1304,7 +1347,7 @@ void radio_thread(int inc) {
         }
       }
       delete p;
-      analogWrite(LED_ISM_TX, 5);
+      if( CONFIG_USE_LEDS) analogWrite(LED_ISM_TX, 5);
     }
 
     // check if there is a recevied packet waiting for us
@@ -1490,7 +1533,7 @@ void iridium_thread(int inc) {
 
   if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: Powering on modem...");
   digitalWrite(PIN_IR_ENABLE, HIGH);
-  analogWrite(LED_IR_ON, 5); // not blinding
+  if( CONFIG_USE_LEDS) analogWrite(LED_IR_ON, 5); // not blinding
   threads.delay(2000);
 
   // Begin satellite modem operation
@@ -1533,7 +1576,7 @@ void iridium_thread(int inc) {
   if (USBSERIAL_DEBUG) safePrint("IRIDIUM: On a scale of 0 to 5, signal quality is currently ");
   if (USBSERIAL_DEBUG) safePrint(signalQuality);
   if ( signalQuality >= 0 && signalQuality <= 5 ) {
-    analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
+    if( CONFIG_USE_LEDS) analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
   }
 
   // start main packet send loop
@@ -1557,7 +1600,7 @@ void iridium_thread(int inc) {
       // Send the message
       if (USBSERIAL_DEBUG) safePrintln("IRIDIUM: sending data buffer over iridium\r\n");
       syslog("IRIDIUM: sending data buffer");
-      analogWrite(LED_IR_TX, 20);
+      if( CONFIG_USE_LEDS) analogWrite(LED_IR_TX, 20);
 
       // copy the packet locally so that other threads can start filling up another packet
       // while the iridium thread sends the current one.
@@ -1568,7 +1611,7 @@ void iridium_thread(int inc) {
 
       irerr = modem.sendSBDBinary(irbuf_internal, mBufLen);
       
-      analogWrite(LED_IR_TX, 0);
+      if( CONFIG_USE_LEDS) analogWrite(LED_IR_TX, 0);
       if (irerr != ISBD_SUCCESS)
       {
         if (USBSERIAL_DEBUG) safePrint("IRIDIUM: sendSBDBinary failed: error ");
@@ -1610,10 +1653,13 @@ void iridium_thread(int inc) {
         if (USBSERIAL_DEBUG) safePrint(signalQuality);
         if (USBSERIAL_DEBUG) safePrintln(".");
         syslog(String("IRIDIUM: signal quality is ") + String(signalQuality));
-        if ( signalQuality >= 0 && signalQuality <= 5 ) {
-          analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
-        }
 
+        if( CONFIG_USE_LEDS ){
+          if( signalQuality >= 0 && signalQuality <= 5 ) {
+            analogWrite(LED_IR_SIG, signalBrightness[signalQuality]);
+          }
+        }
+        
         while( !sq_lock.lock(10) );
         signalQuality = mSq;
         sq_lock.unlock();
@@ -1695,12 +1741,13 @@ void setup() {
 
 
   // LED pin setup
-  pinMode(LED_IR_ON, OUTPUT);
-  pinMode(LED_IR_SIG, OUTPUT);
-  pinMode(LED_IR_TX, OUTPUT);
-  pinMode(LED_ISM_TX, OUTPUT);
-  pinMode(LED_ACT, OUTPUT);
-
+  if( CONFIG_USE_LEDS ){
+    pinMode(LED_IR_ON, OUTPUT);
+    pinMode(LED_IR_SIG, OUTPUT);
+    pinMode(LED_IR_TX, OUTPUT);
+    pinMode(LED_ISM_TX, OUTPUT);
+    pinMode(LED_ACT, OUTPUT);
+  }
 
   // iridium control pin setup
   pinMode(PIN_IR_ENABLE, OUTPUT);
@@ -1747,7 +1794,6 @@ void setup() {
   tid_acc      = threads.addThread(acc_thread,     1, 4096);
   tid_iridium  = threads.addThread(iridium_thread, 1, 4096);
   tid_imu      = threads.addThread(imu_thread,     1, 4096);
-  tid_command  = threads.addThread(command_thread, 1, 4096);
   tid_compress = threads.addThread(compress_thread,1, 70000);
   tid_cap      = threads.addThread(cap_thread,     1, 4096);
 
@@ -1763,6 +1809,7 @@ void setup() {
     if ( digitalRead(PIN_ISM_PRESENT) ) {
       if (USBSERIAL_DEBUG) safePrintln("ISM: present");
       debugRadioPresent = true;
+      tid_command  = threads.addThread(command_thread, 1, 4096);
       tid_radio = threads.addThread(radio_thread, 1, 30000);
     } else {
       debugRadioPresent = false;
