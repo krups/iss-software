@@ -77,6 +77,10 @@ volatile CommandPacket* cmdPackets[MAX_CMDQ_SIZE];
 volatile bool activation = false;
 Threads::Mutex act_lock;
 
+// activation condition detected on thermocouples
+volatile bool tcAct = false;
+Threads::Mutex tcAct_lock;
+
 
 // Thermocouple to digital converter interface with mux control
 TcInterface tc(TC_TYPE_STRING);
@@ -145,7 +149,6 @@ Threads::Mutex logtelemq_lock;
 ///////////////////////////////
 
 
-
 // ism debug radio interface
 static RadioLogger logNode;
 
@@ -183,9 +186,12 @@ volatile bool logen_tc = true;
 volatile bool logen_telem = true;
 
 
-// cap sensing vars
-volatile bool capVal = true;
-Threads::Mutex capVal_lock;
+// activation detected on capacitive sensor
+volatile bool capAct = false;
+Threads::Mutex capAct_lock;
+
+volatile bool capReading = false;
+Threads::Mutex capReading_lock;
 
 // IRIDIUM VARS
 #define IRIDIUM_SERIAL Serial4
@@ -207,6 +213,8 @@ volatile bool irbuf_ready = false;
 volatile uint8_t irbuf[SBD_TX_SZ];
 volatile int irbuf_len = 0;
 
+Threads::Mutex irpc_lock;
+volatile int irpc = 0;
 
 /************************
  * THread IDs
@@ -729,19 +737,19 @@ size_t pack(uint8_t* src, uint8_t* dst, size_t size){
 
 */
 void compress_thread(int inc) {
-  unsigned int num_file_ids = 3;
-  int log_ids[num_file_ids] = {LOGID_TC, LOGID_ACC, LOGID_IMU};
+  unsigned int num_file_ids = 1;
+  int log_ids[num_file_ids] = {LOGID_TC};//, LOGID_ACC, LOGID_IMU};
   // Compressed buffer
   uint8_t c_buf[SBD_TX_SZ];
   // Uncompressed buffer
-  uint8_t uc_buf[2*SBD_TX_SZ];
+  uint8_t uc_buf[3*SBD_TX_SZ];
   unsigned int id_idx = 0;
   bool mBuildPacket = false;
 
   while(1){
     size_t pack_size = 0;
     size_t input_size = 0;
-    size_t actual_read;
+    unsigned long actual_read;
     
     safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
     
@@ -751,11 +759,17 @@ void compress_thread(int inc) {
       
       // Get latest telem packet first
       while( !sd_lock.lock(10) );
-      sdlog.latest_packet(LOGID_TELEM, uc_buf);
+      int offset = sdlog.latest_packet(LOGID_TELEM, uc_buf);
       sd_lock.unlock();
 
-      uint8_t offset = TELEM_T_SIZE + 1;
-      
+      if( offset == (TELEM_T_SIZE + 1) ){
+        syslog("COMPRESS: telem packet for header is correct size");
+        syslog("COMPRESS: uc_buf[0] = " + String((char)uc_buf[0]));
+      } else {
+        syslog("COMPRESS: telem packet for header is NOT correct size");
+        syslog("COMPRESS: uc_buf[0] = " + String((uint8_t)uc_buf[0]) + " in decimal");
+      }
+
       input_size += offset;
 
       // does compressing this first
@@ -790,7 +804,15 @@ void compress_thread(int inc) {
       // until the compressed size of those packets will not fit into the iridium buf. when the 
       // compressed size exeeds that limit, start decreasing the number of samples requested until 
       // able to send
-      while(pack_size < SBD_TX_SZ){
+      // SBD_TX_SZ - 2 to allow for decompressed data size; first two bytes of compressed buffer represent
+      // the decompressed size of the data
+      while(pack_size < (SBD_TX_SZ - 2) ){
+        
+        // dont overflow uc_buf
+        if( (input_size + packet_size) > (3 * SBD_TX_SZ) ){
+          syslog("COMPRESS: input size would overflow uc_buf");
+          break;
+        }
         
         input_size += packet_size;
         
@@ -802,29 +824,35 @@ void compress_thread(int inc) {
         // if there are not enough samples in the specified logfile, just use what is available
         // compress the uncompressed buffer into the compressed buffer to calculate packed size
         // using the correct buffer size if a short read ocurred
-        if(actual_read != input_size - offset){
-          pack_size = pack(uc_buf, c_buf, actual_read + offset);
+        if(actual_read < (input_size - offset) ){
+          pack_size = pack(uc_buf, c_buf+2, actual_read + offset);
           
           // There are not enough packets in the logfile
           safePrintln("Not enough packets in logfile. Requested: " + 
             String(input_size - offset) + " bytes, actually read " + String(actual_read));
+          break;
+        } 
+        // too many bytes back
+        else if(actual_read > (input_size - offset) ) {
+          safePrintln("COMPRESS: got too many bytes back. Requested: " + 
+            String(input_size - offset) + " bytes, actually read " + String(actual_read));
         } 
         // got as many bytes as expected
         else {
-          pack_size = pack(uc_buf, c_buf, input_size);
+          pack_size = pack(uc_buf, c_buf+2, input_size);
         }
         
-        safePrint("Input size: " + String(input_size));
-        safePrint(", packet size: " + String(packet_size));
-        safePrintln(", Offset: " + String(offset));
-        safePrintln("Pack size: " + String(pack_size));
+        //safePrint("Input size: " + String(input_size));
+        //safePrint(", packet size: " + String(packet_size));
+        //safePrintln(", Offset: " + String(offset));
+        //safePrintln("Pack size: " + String(pack_size));
 
         // yield here otherwise file logging and this thread deadlock on sd_lock (?)
         threads.yield();
       }
 
       // if our packed size won't fit in an iridium buffer, start scaling back
-      while (pack_size > SBD_TX_SZ){
+      while (pack_size > (SBD_TX_SZ - 2) ){
         input_size -= packet_size;
 
         // resample log file
@@ -835,16 +863,18 @@ void compress_thread(int inc) {
         // if we got a short read again, let the pack function know the right buffer size
         if( (input_size - offset) != actual_read ){
           // recalc packed size
-          pack_size = pack(uc_buf, c_buf, actual_read + offset);         
+          pack_size = pack(uc_buf, c_buf+2, actual_read + offset);         
         } 
         
         // if it wasn't a short read,  use the expected size 
         else {
           // recalc packed size
-          pack_size = pack(uc_buf, c_buf, input_size);
+          pack_size = pack(uc_buf, c_buf+2, input_size);
         }  
       }
-      
+
+      // finally, set the first two bytes of the compressed buffer to the original data size
+      *(uint16_t*)(&c_buf[0]) = (uint16_t)input_size;
       
       while( !irbuf_lock.lock(10) );
       memcpy(irbuf, c_buf, pack_size);
@@ -873,6 +903,8 @@ void sleep_thread(int inc) {
 
   int  who = -1;          // output of sleep function
   bool mAct = false; // our copy of activation status
+  bool mTcAct = false; // tc detects activation
+  bool mCpAct = false; // cap sense detects activation
   bool mDrp = false; // our copy of debug radio present;
   int  state = 0;    // state for pre-activation sleep routine
   int  sleepCount = 0; // for keeping track of longer periods of time
@@ -892,10 +924,24 @@ void sleep_thread(int inc) {
   while (1) {
 
     // check activation status
-    safeUpdate(&mAct, &activation, &act_lock);
+    safeUpdate(&mTcAct, &tcAct, &tcAct_lock);
+    safeUpdate(&mCpAct, &capAct, &capAct_lock);
+
+    if( CONFIG_USE_ACT_TC && CONFIG_USE_ACT_CAP ){
+      mAct = mCpAct && mTcAct;
+    } else if( CONFIG_USE_ACT_TC && !CONFIG_USE_ACT_CAP ){
+      mAct = mTcAct;
+    } else if( !CONFIG_USE_ACT_TC && CONFIG_USE_ACT_CAP ){
+      mAct = mCpAct;
+    } else {
+      safeUpdate(&mAct, &activation, &act_lock);
+    }
+    
     if ( mAct ) {
       if (USBSERIAL_DEBUG) safePrintln("SLEEP: DETECTED ACTIVATION");
       syslog("SLEEP: activation detected, exiting sleep thread");
+      safeAssign(&activation, true, &act_lock);
+      tone(PIN_BUZZER, 1000);
       break;
     }
 
@@ -907,7 +953,6 @@ void sleep_thread(int inc) {
         // chance to make a TC measurement and update our decicision about activation
         // this should be long enough to create our logs
         threads.delay(SLEEP_TIME_AWAKE);
-
 
         // for testing, we will just idle in this state until receiving a debug command telling us to sleep
         // this prevents early disconnects in serial logging etc
@@ -953,7 +998,15 @@ void sleep_thread(int inc) {
           syslog("SLEEP: all threads acknowledged request for sleep, proceeding");
           state = 2;
         }
-        break;
+      
+      // save power in sleep
+//      pinMode(CS_TC1, INPUT);
+//      pinMode(CS_TC2, INPUT);
+//      pinMode(MUX0, INPUT);
+//      pinMode(MUX1, INPUT);
+//      pinMode(11, INPUT);
+//      pinMode(13, INPUT);  
+      break;
 
       // all threads have prepared for sleep, lets do it
       case 2:
@@ -970,7 +1023,7 @@ void sleep_thread(int inc) {
             goto SLEEP;
           } 
         }
-
+        
         // if we were woken by a digital interrupt from the capacitance sensor
         else if( who == 2 ){
           syslog("SLEEP: woken by capsense");
@@ -985,6 +1038,15 @@ void sleep_thread(int inc) {
 
         if (USBSERIAL_DEBUG) safePrintln("SLEEP: WOKE UP BY: " + String(who));
 
+        // normal pin mode
+//        pinMode(CS_TC1, OUTPUT);
+//        pinMode(CS_TC2, OUTPUT);
+//        pinMode(MUX0, OUTPUT);
+//        pinMode(MUX1, OUTPUT);
+//        pinMode(11, OUTPUT);
+//        pinMode(13, OUTPUT);
+        
+
         // back to waiting on threds to sleep
         state = 0;
         sleepCount = 0;
@@ -995,8 +1057,14 @@ void sleep_thread(int inc) {
     threads.delay(50);
   }
 
+  // let the activation buzzer run for three seconds
+  threads.delay(3000);
+  noTone(PIN_BUZZER);
+  digitalWrite(PIN_BUZZER, LOW);
+
   // now we are activated!
   while (1) {
+    threads.yield();
     // mybe just end the thread instead of looping here?
   }
 }
@@ -1039,6 +1107,7 @@ void command_thread(int inc) {
             // TRIGGER A SAMPLE OPERATION AND FILLING THE IRIDIUM BUFFER
             case CMDID_IR_BP:
               syslog("CMDTHRD: building packet");
+              safePrintln("CMDTHRD: building packet");
               safeAssign(&buildPacket, true, &buildPacket_lock);
               break;
 
@@ -1112,9 +1181,14 @@ void tc_thread(int inc) {
       // them necessary are making the spi and mux select pins high z for yielding control to the 
       // safety processor, which we are not using
       
-      // while ( !spi_lock.lock(10) );
-      // tc.disable();
-      // spi_lock.unlock();
+//       while ( !spi_lock.lock(10) );
+//       tc.disable();
+//       spi_lock.unlock();
+
+//      pinMode(CS_TC1, INPUT);
+//      pinMode(CS_TC2, INPUT);
+//      pinMode(MUX0, INPUT);
+//      pinMode(MUX1, INPUT);
 
       // safely let the sleep thread know we are ready
       while ( !sr_tc_lock.lock(1000) );
@@ -1129,14 +1203,19 @@ void tc_thread(int inc) {
           if (USBSERIAL_DEBUG) safePrintln("TC: waking up");
 
           // see above comment about many tc enable/disable calls
-          /* while ( !spi_lock.lock(1000) );
-          ret = tc.enable();
-          spi_lock.unlock();
-          if ( ret ) {
-            if (USBSERIAL_DEBUG) safePrintln("TC: successfully reconfigured TC chips");
-          } else {
-            if (USBSERIAL_DEBUG) safePrintln("TC: [ERROR] could not reconfigure TC chips!");
-          } */
+//           while ( !spi_lock.lock(1000) );
+//          ret = tc.enable();
+//          spi_lock.unlock();
+//          if ( ret ) {
+//            if (USBSERIAL_DEBUG) safePrintln("TC: successfully reconfigured TC chips");
+//          } else {
+//            if (USBSERIAL_DEBUG) safePrintln("TC: [ERROR] could not reconfigure TC chips!");
+//          } 
+
+//          pinMode(CS_TC1, OUTPUT);
+//          pinMode(CS_TC2, OUTPUT);
+//          pinMode(MUX0, OUTPUT);
+//          pinMode(MUX1, OUTPUT);
 
           // clear the sleep ready flag
           while ( !sr_tc_lock.lock(10) );
@@ -1186,7 +1265,7 @@ void tc_thread(int inc) {
           if (USBSERIAL_DEBUG) safePrintln("TC: DETECTED ACTIVATION");
           // log this over radio too
           mAct = true;
-          safeAssign(&activation, true, &act_lock);
+          safeAssign(&tcAct, true, &tcAct_lock);
         }
       }
 
@@ -1220,7 +1299,7 @@ void tc_thread(int inc) {
     } else {
       // no new tc data
     }
-    threads.delay(100);
+    threads.delay(50);
   }
 }
 
@@ -1246,7 +1325,7 @@ void radio_thread(int inc) {
   } else {
     if (USBSERIAL_DEBUG) safePrintln("ISM: log node failed to start, idling thread");
     syslog("ISM: log node failed to start, idling thread");
-    while (1) threads.delay(1000);
+    while (1) threads.yield();
   }
 
   bool mNeedSleep = false;
@@ -1259,7 +1338,7 @@ void radio_thread(int inc) {
     if ( mNeedSleep ) {
       if (USBSERIAL_DEBUG) safePrintln("ISM: sleeping");
       safeAssign(&sr_radio, true, &sr_radio_lock);
-
+      logNode.sleep();
       while ( mNeedSleep ) {
         safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
         if ( !mNeedSleep ) {
@@ -1352,58 +1431,60 @@ void radio_thread(int inc) {
 
     // check if there is a recevied packet waiting for us
     newData = false;
-    if (  spi_lock.lock() ) {
+    if (  spi_lock.lock(20) ) {
       newData = logNode.available();
     }
+    //spi_lock.unlock();
+    
     // if we have a new packet waiting
-    while( newData ) {
+    if( newData ) {
 
       //safePrintln("log node available");
       
       // receive it
+      //while(  !spi_lock.lock(20) );
       bool rcvd = logNode.receivePackets();
-
+      //spi_lock.unlock();
 
       
       // if we received it, decode it into a packet in the logNode packet buffer
       if( rcvd ){
 
-        //safePrintln("  recevied from log node");
-        
-        newData = false;
+        // build packets from recieved data
+        //while(  !spi_lock.lock(10) );
         int np = logNode.decodePackets();
+        //spi_lock.unlock();
 
         syslog("RADIO: recieved" + String(np) + " new packet(s)");
         
         // if it is in the packet buffer, copy it to the command buffer
         if( np > 0 ){
-
-          //safePrintln("num packets was nonzero");
-
-          while( !cmdPacket_lock.lock(10) );
-
+          
           // copy packets from logNode to command buffer, only if they are command packets
+          while( !cmdPacket_lock.lock(10) );
           for( int i=0; i<np; i++ ){
             if( logNode.packets()[i]->type() == PTYPE_COMMAND ){
-              //safePrintln("! added command packet to command packet queue");
               cmdPackets[cmdPacketCount] = new CommandPacket(logNode.packets()[i]->data());
               cmdPacketCount++;
             }
           }
-
           cmdPacket_lock.unlock();
 
+          // free memory of packets that were recieved
+          //while(  !spi_lock.lock(10) );
           logNode.deletePackets();
+          //spi_lock.unlock();
         }
       } else  {
         syslog("RADIO: failed to recieve packet");
       }
 
+      newData = false;
     } 
     spi_lock.unlock();
     
     
-    threads.delay(20);
+    threads.delay(30);
   }
 }
 
@@ -1416,15 +1497,16 @@ void telem_thread(int inc) {
   unsigned long ts = 0;
   float vbat = 0; 
   int batt = 0;
+  int logNum = -1;
   
   if (USBSERIAL_DEBUG) safePrintln("TELEM: starting thread");
 
-  threads.delay(5000);
+  threads.delay(7000);
 
   // get current logNum
   while ( !sd_lock.lock(1000) );
   while ( !spi_lock.lock(1000) );
-  static uint8_t logNum = sdlog.logNum();
+  logNum = sdlog.logNum();
   spi_lock.unlock();
   sd_lock.unlock();
 
@@ -1450,12 +1532,22 @@ void telem_thread(int inc) {
       }
     }
 
+    if( logNum == -1 ){
+      // get current logNum
+      while ( !sd_lock.lock(1000) );
+      while ( !spi_lock.lock(1000) );
+      logNum = sdlog.logNum();
+      spi_lock.unlock();
+      sd_lock.unlock();
+    }
+
     // process analog conversion to read battery voltage
     // vbat is split through two 100k resistors and connected to PIN_BAT_SENSE
     // resoltution configurable
+    float vout = 
     batt = analogRead( PIN_BAT_SENSE ); //PIN_BAT_SENSE
-    vbat = ((float)(batt+VBAT_CAL)) / 1023.0;
-    vbat = vbat * 3.3 * 2;
+    vbat = ((float)(batt)) / 1023.0;
+    vbat = (vbat * 3.3) / VBAT_DIV;
 
     ts = safeMillis(); // get current as possible timestamp
 
@@ -1463,10 +1555,18 @@ void telem_thread(int inc) {
       s = signalQuality;
       sq_lock.unlock();
     }
+    int mIrpc = 0;
+    if( irpc_lock.lock(10) ){
+      mIrpc = irpc;
+      irpc_lock.unlock();
+    }
+
+    bool mAct = false;
+    safeUpdate(&mAct, &activation, &act_lock);
 
     while ( !telemq_lock.lock(100) ); // get lock for telem packet log queue
     if ( telemq_count + 1 < MAX_TELEMQ_SIZE ) {
-      telemdataq[telemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, s, logNum);  // TODO: fill in tc1 and tc2 temp and irsig
+      telemdataq[telemq_write] = new TelemPacket(ts, vbat, (float)mIrpc, (float)mAct, s, (uint8_t)logNum);  // TODO: fill in tc1 and tc2 temp and irsig
       telemq_write = (telemq_write + 1) % MAX_TELEMQ_SIZE;
       telemq_count += 1;
     }
@@ -1475,7 +1575,7 @@ void telem_thread(int inc) {
     if( ISM_DEBUG  && logen_telem ){
       while ( !logtelemq_lock.lock(100) ); // get lock for telem packet log queue
       if ( logtelemq_count + 1 < MAX_TELEMQ_SIZE ) {
-        logtelemdataq[logtelemq_write] = new TelemPacket(ts, vbat, 0.0, 0.0, s, logNum);  // TODO: fill in tc1 and tc2 temp and irsig
+        logtelemdataq[logtelemq_write] = new TelemPacket(ts, vbat, (float)mIrpc, (float)mAct, s, (uint8_t)logNum);  // TODO: fill in tc1 and tc2 temp and irsig
         logtelemq_write = (logtelemq_write + 1) % MAX_TELEMQ_SIZE;
         logtelemq_count += 1;
       }
@@ -1510,6 +1610,11 @@ void iridium_thread(int inc) {
   unsigned long signalCheckInterval = 15000;
   unsigned long lastSignalCheck = 0;
   uint8_t irbuf_internal[SBD_TX_SZ];
+
+  // before activation and during sleep, set serial port pins to iridium to high impedance
+  // to limit power consumption of max3232e 
+  pinMode(PIN_IRIDIUM_TX, OUTPUT);
+  pinMode(PIN_IRIDIUM_RX, INPUT);
 
   // pre activation routine
   while (1) {
@@ -1630,6 +1735,9 @@ void iridium_thread(int inc) {
         
         mBufReady = false;
         safeAssign(&irbuf_ready, false, &irbuf_lock);
+        while( !irpc_lock.lock(10) );
+        irpc++;
+        irpc_lock.unlock();
         syslog("IRIDIUM: sent binary packet");
       }
     }
@@ -1679,46 +1787,52 @@ void iridium_thread(int inc) {
    Capacitive sensing thread
 */
 void cap_thread(int inc) {
-
-  // cap sense control 
-  // this configuration supports an at42qt touch chip on a breakout board from adafruit
-  // only one of the four pins on the capsense header is used 
-  pinMode(2, INPUT); // digital input 
-
-
   bool mAct = false;    // local copy of global activation status
   bool mCapVal = false; // current gpio pin state
 
   // previous readings of capacitive sense value, 
   // must all agree for activation status to be updated
+  // for real mission, activation is represented by no sensed capacitance, i.e. capVal=0
+  // set all values to 1 initially
   int histLen = 10;
   uint8_t capHistory[histLen];
-  memset(capHistory, 0, sizeof(capHistory));
+  memset(capHistory, 1, sizeof(capHistory));
 
-  int pos = 0;
+  int pos = 1;
 
-  threads.delay(7000);
+  threads.delay(5000);
   
   while (1) {
     safeUpdate(&mAct, &activation, &act_lock);
 
     mCapVal = digitalRead(2);
+    
+    safeAssign(&capReading, mCapVal, &capReading_lock);
+
+    //Serial.println("CAP: capval = " + String(mCapVal));
 
     capHistory[pos] = mCapVal;
     pos = (pos + 1) % histLen;
     
     //if(USBSERIAL_DEBUG) safePrintln("CAP: capval="+String(mCapVal));
 
-    bool capAct = true;
-
+    // set capAct to false then logic OR with all of the readings in the buffer,
+    // if at the end of the loop capAct is still false then all of the readings 
+    // must have been false too, which means activation is detected
+    bool mCapAct = true;
     for( int i=0; i<histLen; i++ ){
-      capAct = capHistory[i] && capAct;
+      mCapAct = capHistory[i] && mCapAct;
     }
 
     // if we just detected activation and we aren't already activated, activate
-    if( capAct && !mAct ){
+    if( pos==0 && mCapAct==true && !mAct ){
       safePrintln("CAPTHRD: detected activation!");
-      safeUpdate(&activation, &capAct, &act_lock);
+      
+      syslog("CAP: detected activation, setting capVal=true");
+
+      safeAssign(&capAct, true, &capAct_lock);
+      
+      //safeUpdate(&activation, &capAct, &act_lock);
 
       // idle infinitely now that we are activated, to give other threads more time
       while(1) threads.yield();
@@ -1726,7 +1840,7 @@ void cap_thread(int inc) {
 
     //digitalWrite(LED_ACT, mCapVal);
 
-    threads.delay(100); // take cap sense readings at 10hz
+    threads.delay(500); // take cap sense readings at ~2hz
   }
   
 }
@@ -1770,34 +1884,40 @@ void setup() {
   pinMode(PIN_BAT_STAT, INPUT);
   pinMode(PIN_BAT_SENSE, INPUT);
 
+  pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);
+
   // config for IMU, start I2C bus and falling edge data ready interrupt pin
   //attachInterrupt(digitalPinToInterrupt(PIN_IMU_INT), imuISR, FALLING);
   pinMode(PIN_IMU_INT, INPUT);
   Wire.begin();
   Wire.setClock(400000);
 
+  snoozeSPI.setClockPin(13);
+
   // configure teensy snooze library classes
   timer.setTimer(60000); // sleep one minute at a time
 
   // configure interrupt to wake functionality for the sleep driver
-  // on the pin that connects to the capacitive sense pin
-  pinMode(2, INPUT);
-  snoozeDigital.pinMode(2, INPUT, RISING);//pin, mode, type
+  // on the pin that connects to the capacitive sense pin, we want to wake from sleep
+  // when this pin goes low, representing separation of the KREM from the outside of the capsule
+  pinMode(2, INPUT_PULLUP);
+  snoozeDigital.pinMode(2, INPUT_PULLUP, RISING);//pin, mode, type
 
   delay(2000);
   
 
   // start threads, the '1' argument has no purpose, third arg is stack size (default is 1k)
-  tid_sd       = threads.addThread(sd_thread,      1, 4096);
+  tid_sd       = threads.addThread(sd_thread,      1, 8192);
   tid_telem    = threads.addThread(telem_thread,   1, 4096);
-  tid_tc       = threads.addThread(tc_thread,      1, 8192);
-  tid_acc      = threads.addThread(acc_thread,     1, 4096);
-  tid_iridium  = threads.addThread(iridium_thread, 1, 4096);
-  tid_imu      = threads.addThread(imu_thread,     1, 4096);
+  tid_tc       = threads.addThread(tc_thread,      1, 4096);
+  tid_acc      = threads.addThread(acc_thread,     1, 8192);
+  tid_iridium  = threads.addThread(iridium_thread, 1, 16000);
+  tid_imu      = threads.addThread(imu_thread,     1, 8192);
   tid_compress = threads.addThread(compress_thread,1, 70000);
-  tid_cap      = threads.addThread(cap_thread,     1, 4096);
+  tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
-  tid_sleep    = threads.addThread(sleep_thread,   1, 4096);
+  tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
 
   // start the radio thread if its powered on and enabled in config
   // TODO: this thread doesn't like being started first?????
@@ -1810,7 +1930,7 @@ void setup() {
       if (USBSERIAL_DEBUG) safePrintln("ISM: present");
       debugRadioPresent = true;
       tid_command  = threads.addThread(command_thread, 1, 4096);
-      tid_radio = threads.addThread(radio_thread, 1, 30000);
+      tid_radio = threads.addThread(radio_thread, 1, 20000);
     } else {
       debugRadioPresent = false;
       if (USBSERIAL_DEBUG) safePrintln("ISM: NOT PRESENT");
@@ -1819,7 +1939,7 @@ void setup() {
     debugRadioPresent = false;
   }
 
-  threads.setSliceMillis(10);
+  threads.setSliceMillis(5);
 }
 
 void loop() {
