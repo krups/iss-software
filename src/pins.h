@@ -81,6 +81,8 @@
 #define PIN_ACC_Y           A18             // y axis high g accel output
 #define PIN_ACC_Z           A19             // x axis high g accel output
 
+#define PIN_IRIDIUM_TX      32
+#define PIN_IRIDIUM_RX      31
 #define PIN_IRIDIUM_TX_ACT	A21	            // iridium output indicating the module is actively transmitting RF
 #define PIN_IRIDIUM_STATUS	A22	            // iridium output indicating an SBD message has arrived
 
