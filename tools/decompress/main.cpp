@@ -21,6 +21,7 @@ int main(int argc, char ** argv)
   std::cout << "starting" << std::endl;
 
   std::string inFileName(argv[1]);
+  std::string outFileName(argv[2]);
   std::ifstream inFile(inFileName);
 
   if( !inFile.is_open() ){
@@ -48,16 +49,24 @@ int main(int argc, char ** argv)
 
   std::cout << "done" << std::endl;
 
+  uint16_t dclen = *(uint16_t*)(&buffer[0]);
 
-  unsigned char  depacked[MAX_DEPACKED_SIZE];
+  std::cout << "decompressed data size expected to be: " << dclen << " bytes." << std::endl;
+  
+  unsigned char  depacked[dclen];
 
   std::cout << "trying to depack...";
 
-  int len = blz_depack_safe(buffer, length, depacked, 287);
+  int len = blz_depack_safe(buffer+2, length, depacked, dclen);
 
   std::cout << "done" << std::endl;
 
-  std::ofstream outFile("out.dat", std::ofstream::binary);
+  std::ofstream outFile(outFileName, std::ofstream::binary);
+
+  if( !outFile.is_open() ){
+    std::cout << "Could not open output file : " << inFileName << std::endl;
+    return 1;
+  }
 
   outFile.write((const char *)depacked, len);
 
