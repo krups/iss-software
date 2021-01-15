@@ -19,7 +19,10 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_SHUTTLE
+#define MISSION_TYPE         MISSION_TEST_JSC
+
+#define CONFIG_USE_ACT_TC    0
+#define CONFIG_USE_ACT_CAP   1
 
 //////////////////////////////////////////
 // real mission for the two capsules with shuttle tile TPS
@@ -62,7 +65,7 @@
 // ground trial setup for the capsule with JSC TPS 
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_JSC)
-  #define USBSERIAL_DEBUG      1
+  #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            1
   #define TC_COUNT             5
   #define TC_THRESHOLD         1700.0 // degrees celcius
@@ -108,8 +111,8 @@
 /************************************************************************************************
 * battery voltage calibration
 */
-#define VBAT_CAL                0
-
+//#define VBAT_CAL                -2 
+#define VBAT_DIV                0.50761421319 // for board "X",     // measured 97k to vin, 100k to gnd
 
 /************************************************************************************************
 * queue size control (applies to both ISM debug and SD log. 
@@ -122,7 +125,13 @@
 /************************************************************************************************
 * SLEEP CONFIG
 */
-#define CONFIG_AUTOMATIC_SLEEP  0
+#define CONFIG_AUTOMATIC_SLEEP  1
 #define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
 #define SLEEP_DURATION_MINUTES  30
+
+/************************************************************************************************
+* LED CONFIG
+*/
+#define CONFIG_USE_LEDS         0
+
 #endif
