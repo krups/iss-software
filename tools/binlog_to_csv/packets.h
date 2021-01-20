@@ -38,7 +38,7 @@ typedef struct {
 
 // board telemetry packet
 typedef struct {
-  uint16_t t;          // 4B, timestamp
+  uint32_t t;          // 4B, timestamp
   float batt;               // 4B, battery voltage
   float tc1_temp;           // 4B, TC converter 1 cold junction temperature
   float tc2_temp;           // 4B, TC converter 2 cold junction temperature
@@ -63,7 +63,7 @@ typedef struct {
 // thermocouple measurement packet
 typedef struct {
   float data[TC_COUNT];  // tc measurements, 4 * TC_COUNT bytes
-  unsigned long time;       // in ms
+  uint32_t time;       // in ms
 } tc_t;
 #define TC_T_SIZE    (4*TC_COUNT) + 4 // just enough for data, not including struct padding
 
@@ -252,17 +252,17 @@ public:
     memcpy(_data, buf, _size);
   }
   
-  TcPacket(float* data, unsigned long time) : Packet(PTYPE_TC, TC_T_SIZE){
+  TcPacket(float* data, uint32_t time) : Packet(PTYPE_TC, TC_T_SIZE){
     for(int i = 0; i < TC_COUNT; i++){
       ((float*)_data)[i] = data[i];
     }
-    *(unsigned long*)(&_data[4*TC_COUNT]) = time;
+    *(uint32_t*)(&_data[4*TC_COUNT]) = time;
   }
 
 
 
   float* data(){ return (float *)_data; }
-  unsigned long time(){return *((unsigned long*)&_data[4*TC_COUNT]);}
+  uint32_t time(){return *((uint32_t*)&_data[4*TC_COUNT]);}
 };
 
 // IMU packet
@@ -271,7 +271,7 @@ public:
   IMUPacket(float ax, float ay, float az, 
             float gx, float gy, float gz, 
             float mx, float my, float mz, 
-            unsigned long t) : Packet(PTYPE_IMU, IMU_T_SIZE) {    
+            uint32_t t) : Packet(PTYPE_IMU, IMU_T_SIZE) {    
     *(float*)(&_data[0]) = ax;
     *(float*)(&_data[4]) = ay;
     *(float*)(&_data[8]) = az;
@@ -281,7 +281,7 @@ public:
     *(float*)(&_data[24]) = mx;
     *(float*)(&_data[28]) = my;
     *(float*)(&_data[32]) = mz;
-    *(unsigned long*)(&_data[36]) = t;
+    *(uint32_t*)(&_data[36]) = t;
   } 
   IMUPacket(uint8_t *buf) : Packet(PTYPE_IMU, IMU_T_SIZE) {  
     memcpy(_data, buf, _size);
