@@ -22,7 +22,7 @@
 #define MISSION_TYPE         MISSION_TEST_JSC
 
 #define CONFIG_USE_ACT_TC    0
-#define CONFIG_USE_ACT_CAP   1
+#define CONFIG_USE_ACT_CAP   0
 
 //////////////////////////////////////////
 // real mission for the two capsules with shuttle tile TPS
@@ -111,8 +111,9 @@
 /************************************************************************************************
 * battery voltage calibration
 */
-//#define VBAT_CAL                -2 
-#define VBAT_DIV                0.50761421319 // for board "X",     // measured 97k to vin, 100k to gnd
+//#define VBAT_DIV                0.50761421319 // for board "X",   R6=97k   to Vin, R7=100k to GND
+#define VBAT_DIV                0.542        // for board "1",   R6=96.8k to Vin, R7=99.3k to GND
+//#define VBAT_DIV                0.5046        // for board "2",   R6=97.3k to Vin, R7=99.1k to GND
 
 /************************************************************************************************
 * queue size control (applies to both ISM debug and SD log. 
@@ -125,13 +126,13 @@
 /************************************************************************************************
 * SLEEP CONFIG
 */
-#define CONFIG_AUTOMATIC_SLEEP  1
+#define CONFIG_AUTOMATIC_SLEEP  0
 #define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
 #define SLEEP_DURATION_MINUTES  30
 
 /************************************************************************************************
 * LED CONFIG
 */
-#define CONFIG_USE_LEDS         0
+#define CONFIG_USE_LEDS         1
 
 #endif
