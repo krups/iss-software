@@ -1613,8 +1613,8 @@ void iridium_thread(int inc) {
 
   // before activation and during sleep, set serial port pins to iridium to high impedance
   // to limit power consumption of max3232e 
-  pinMode(PIN_IRIDIUM_TX, OUTPUT);
-  pinMode(PIN_IRIDIUM_RX, INPUT);
+  pinMode(PIN_IRIDIUM_TX, INPUT_PULLUP);
+  pinMode(PIN_IRIDIUM_RX, INPUT_PULLUP);
 
   // pre activation routine
   while (1) {
@@ -1630,8 +1630,6 @@ void iridium_thread(int inc) {
 
     threads.delay(100);
   }
-
-  // now we are activated!
 
   // Start the serial port connected to the satellite modem
   IRIDIUM_SERIAL.begin(9600);
@@ -1892,6 +1890,8 @@ void setup() {
   pinMode(PIN_IMU_INT, INPUT);
   Wire.begin();
   Wire.setClock(400000);
+
+  pinMode(CS_DSP, INPUT);
 
   snoozeSPI.setClockPin(13);
 
