@@ -245,18 +245,16 @@ public:
     _fh = SD.open(_fnames[id].c_str(), FILE_READ);
     if( !_fh ) {
       safePrintln("error opening file");
-      return;
+      return -1;
     }
-    char type_buf[1];
-    bytes_read += _fh.read(type_buf, 1);
-    _fh.seek(0);
-    unsigned long packet_size;
-    switch (type_buf[0])
+   
+    int packet_size;
+    switch (id)
     {
-    case PTYPE_TELEM:
+    case LOGID_TELEM:
       packet_size = TELEM_T_SIZE;
       break;
-    case PTYPE_ACCELSTATS:
+/*    case PTYPE_ACCELSTATS:
       packet_size = ACC_STAT_T_SIZE;
       break;
     case PTYPE_TC:
@@ -267,14 +265,14 @@ public:
       break;
     case PTYPE_IMU:
       packet_size = IMU_T_SIZE;
-      break;
+      break;*/
     default:
-      if(USBSERIAL_DEBUG) safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");
-      return;
+      if(USBSERIAL_DEBUG) {safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");}
+      return -1;
       break;
     }
     packet_size += 1;
-    unsigned int start_loc = _fh.size() -  packet_size - 1;
+    unsigned int start_loc = _fh.size() -  packet_size;
     //safePrint("latest_packet:  seeking to "); safePrint(start_loc);
     _fh.seek(start_loc);
 
