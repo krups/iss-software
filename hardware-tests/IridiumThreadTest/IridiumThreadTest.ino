@@ -459,7 +459,7 @@ void syslog(String s) {
     unsigned long m = safeMillis();
     int tries = 0;
     while (tries < 5 ){
-      if ( sd_lock.lock(100) ){
+      if ( sd_lock.lock(20) ){
         sdlog.logMsg(LOGID_SYS, String(m) + "\t" + s);
         sd_lock.unlock();
         break;
@@ -747,8 +747,8 @@ void compress_thread(int inc) {
   bool mBuildPacket = false;
 
   while(1){
-    size_t pack_size = 0;
-    size_t input_size = 0;
+    int pack_size = 0;
+    int input_size = 0;
     unsigned long actual_read;
     
     safeUpdate(&mBuildPacket, &buildPacket, &buildPacket_lock);
@@ -763,14 +763,15 @@ void compress_thread(int inc) {
       sd_lock.unlock();
 
       if( offset == (TELEM_T_SIZE + 1) ){
-        syslog("COMPRESS: telem packet for header is correct size");
+        syslog("COMPRESS: telem packet for header is correct size, offset=" + String(offset));
         syslog("COMPRESS: uc_buf[0] = " + String((char)uc_buf[0]));
+        input_size += offset;
       } else {
-        syslog("COMPRESS: telem packet for header is NOT correct size");
+        syslog("COMPRESS: telem packet for header is NOT correct size, offset=" + String(offset));
         syslog("COMPRESS: uc_buf[0] = " + String((uint8_t)uc_buf[0]) + " in decimal");
+        input_size = TELEM_T_SIZE+1;
       }
 
-      input_size += offset;
 
       // does compressing this first
       //pack_size = pack(uc_buf, c_buf, input_size);
@@ -779,7 +780,7 @@ void compress_thread(int inc) {
 
       // now calculate the size of the packets we will be adding to the uncompressed buffer 
       // based on type char
-      size_t packet_size;
+      int packet_size;
 
       switch (log_ids[id_idx])
       {
@@ -884,7 +885,7 @@ void compress_thread(int inc) {
       
       if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
       if(USBSERIAL_DEBUG) safePrintln("Compressed size: " + String(pack_size)  + "bytes");
-      id_idx = (id_idx+1) % 3;
+      id_idx = (id_idx+1) % num_file_ids;
 
       syslog("COMPRESS: filled iridium buffer,comp size: " + String(pack_size)  + " bytes, orig size: " + String(input_size));
       
@@ -1185,10 +1186,12 @@ void tc_thread(int inc) {
 //       tc.disable();
 //       spi_lock.unlock();
 
-//      pinMode(CS_TC1, INPUT);
-//      pinMode(CS_TC2, INPUT);
-//      pinMode(MUX0, INPUT);
-//      pinMode(MUX1, INPUT);
+      pinMode(CS_TC1, INPUT);
+      pinMode(CS_TC2, INPUT);
+      pinMode(MUX0, INPUT);
+      pinMode(MUX1, INPUT);
+      pinMode(MOSI, INPUT);
+      pinMode(SCK, INPUT);
 
       // safely let the sleep thread know we are ready
       while ( !sr_tc_lock.lock(1000) );
@@ -1212,10 +1215,12 @@ void tc_thread(int inc) {
 //            if (USBSERIAL_DEBUG) safePrintln("TC: [ERROR] could not reconfigure TC chips!");
 //          } 
 
-//          pinMode(CS_TC1, OUTPUT);
-//          pinMode(CS_TC2, OUTPUT);
-//          pinMode(MUX0, OUTPUT);
-//          pinMode(MUX1, OUTPUT);
+          pinMode(CS_TC1, OUTPUT);
+          pinMode(CS_TC2, OUTPUT);
+          pinMode(MUX0, OUTPUT);
+          pinMode(MUX1, OUTPUT);
+          pinMode(MOSI, OUTPUT);
+          pinMode(SCK, OUTPUT);
 
           // clear the sleep ready flag
           while ( !sr_tc_lock.lock(10) );
@@ -1299,7 +1304,7 @@ void tc_thread(int inc) {
     } else {
       // no new tc data
     }
-    threads.delay(50);
+    threads.delay(20);
   }
 }
 
@@ -1338,7 +1343,7 @@ void radio_thread(int inc) {
     if ( mNeedSleep ) {
       if (USBSERIAL_DEBUG) safePrintln("ISM: sleeping");
       safeAssign(&sr_radio, true, &sr_radio_lock);
-      logNode.sleep();
+      //logNode.sleep();
       while ( mNeedSleep ) {
         safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
         if ( !mNeedSleep ) {
@@ -1484,7 +1489,7 @@ void radio_thread(int inc) {
     spi_lock.unlock();
     
     
-    threads.delay(30);
+    threads.delay(50);
   }
 }
 
@@ -1882,12 +1887,32 @@ void setup() {
   pinMode(PIN_BAT_STAT, INPUT);
   pinMode(PIN_BAT_SENSE, INPUT);
 
+  // startup beep
   pinMode(PIN_BUZZER, OUTPUT);
-  digitalWrite(PIN_BUZZER, LOW);
+  //digitalWrite(PIN_BUZZER, LOW);
+  tone(PIN_BUZZER, 1000);
+  delay(200);
+  noTone(PIN_BUZZER);
+  delay(100);
+  tone(PIN_BUZZER, 1000);
+  delay(200);
+  noTone(PIN_BUZZER);
+  delay(100);
+  tone(PIN_BUZZER, 1000);
+  delay(200);
+  noTone(PIN_BUZZER);
+  delay(100);
+  tone(PIN_BUZZER, 1000);
+  delay(200);
+  noTone(PIN_BUZZER);
+  pinMode(PIN_BUZZER, INPUT);
 
+  
   // config for IMU, start I2C bus and falling edge data ready interrupt pin
   //attachInterrupt(digitalPinToInterrupt(PIN_IMU_INT), imuISR, FALLING);
   pinMode(PIN_IMU_INT, INPUT);
+  pinMode(PIN_IMU_FSYNC, OUTPUT);
+  digitalWrite(PIN_IMU_FSYNC, LOW);
   Wire.begin();
   Wire.setClock(400000);
 
@@ -1914,7 +1939,7 @@ void setup() {
   tid_acc      = threads.addThread(acc_thread,     1, 8192);
   tid_iridium  = threads.addThread(iridium_thread, 1, 16000);
   tid_imu      = threads.addThread(imu_thread,     1, 8192);
-  tid_compress = threads.addThread(compress_thread,1, 70000);
+  tid_compress = threads.addThread(compress_thread,1, 80000);
   tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
   tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
