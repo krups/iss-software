@@ -19,7 +19,7 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_JSC
+#define MISSION_TYPE         MISSION_TEST_SHUTTLE
 
 #define CONFIG_USE_ACT_TC    0
 #define CONFIG_USE_ACT_CAP   0
@@ -47,7 +47,7 @@
   #define TC_THRESHOLD         100.0 // degrees celcius
   #define TC_CONSENSUS         4   // number of TCs that need to exceed threshold
   
-  #define TC_TYPE_STRING       "RKRKR" 
+  #define TC_TYPE_STRING       "RKKRK" 
 #endif
 
 // ground trial setup for shuttle tile TPS capsules
@@ -71,7 +71,7 @@
   #define TC_THRESHOLD         1700.0 // degrees celcius
   #define TC_CONSENSUS         4   // number of TCs that need to exceed threshold
   
-  #define TC_TYPE_STRING       "RKRKR" 
+  #define TC_TYPE_STRING       "RKKRK" 
 #endif
 
 
@@ -128,7 +128,7 @@
 */
 #define CONFIG_AUTOMATIC_SLEEP  0
 #define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
-#define SLEEP_DURATION_MINUTES  30
+#define SLEEP_DURATION_MINUTES  1440 // 1440 min = 24 hrs
 
 /************************************************************************************************
 * LED CONFIG
