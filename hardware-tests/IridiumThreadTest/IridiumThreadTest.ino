@@ -704,7 +704,36 @@ void acc_thread(int inc) {
   unsigned long t = 0;
   int x, y, z;
 
+  // local copy of sleep status
+  bool mNeedSleep = false;
+
   while (1) {
+    // check if we need to prepare to sleep
+    safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+    if ( mNeedSleep ) {
+      if (USBSERIAL_DEBUG) safePrintln("ACC: sleeping");
+      
+      // safely let the sleep thread know we are ready
+      while ( !sr_acc_lock.lock(1000) );
+      sr_acc = true;
+      sr_acc_lock.unlock();
+
+      // now we are waiting to be put to sleep, and checking if we've woken up
+      while (1) {
+        safeUpdate(&mNeedSleep, &needSleep, &ns_lock);
+        // if we woke up, reconfigure the IMU
+        if ( !mNeedSleep ) {
+          if (USBSERIAL_DEBUG) safePrintln("ACC: waking up");
+
+          // clear the sleep ready flag
+          while ( !sr_acc_lock.lock(1000) );
+          sr_acc = false;
+          sr_acc_lock.unlock();
+          break;
+        }
+      }
+    }
+    
     // get log timestamp
     t = safeMillis();
     x = analogRead(PIN_ACC_X);
@@ -762,6 +791,15 @@ void compress_thread(int inc) {
       int offset = sdlog.latest_packet(LOGID_TELEM, uc_buf);
       sd_lock.unlock();
 
+      #if USBSERIAL_DEBUG
+      safePrint("COMPRESS: got latest packet bytes:\n");
+      for( int ii=0; ii<offset; ii++){
+        safePrint((uint8_t)uc_buf[ii]);
+        safePrint(" ");
+      }
+      safePrintln("");
+      #endif
+      
       if( offset == (TELEM_T_SIZE + 1) ){
         syslog("COMPRESS: telem packet for header is correct size, offset=" + String(offset));
         syslog("COMPRESS: uc_buf[0] = " + String((char)uc_buf[0]));
@@ -875,7 +913,7 @@ void compress_thread(int inc) {
       }
 
       // finally, set the first two bytes of the compressed buffer to the original data size
-      *(uint16_t*)(&c_buf[0]) = (uint16_t)input_size;
+      *(uint16_t*)(&c_buf[0]) = (uint16_t)(actual_read+offset);
       
       while( !irbuf_lock.lock(10) );
       memcpy(irbuf, c_buf, pack_size);
@@ -883,7 +921,7 @@ void compress_thread(int inc) {
       irbuf_ready = true;
       irbuf_lock.unlock();
       
-      if(USBSERIAL_DEBUG) safePrintln("Packed " + String(input_size)  + " bytes into SBD packet");
+      if(USBSERIAL_DEBUG) safePrintln("Packed " + String(actual_read + offset)  + " bytes into SBD packet");
       if(USBSERIAL_DEBUG) safePrintln("Compressed size: " + String(pack_size)  + "bytes");
       id_idx = (id_idx+1) % num_file_ids;
 
@@ -994,7 +1032,7 @@ void sleep_thread(int inc) {
         }
 
         // if all the threads are ready to sleep
-        if ( ss_tc && ss_imu && ss_radio) {
+        if ( ss_tc && ss_imu && ss_radio && ss_acc) {
           if (USBSERIAL_DEBUG) safePrintln("SLEEP: all threads acknowledged request for sleep, proceeding");
           syslog("SLEEP: all threads acknowledged request for sleep, proceeding");
           state = 2;
@@ -1939,7 +1977,7 @@ void setup() {
   tid_acc      = threads.addThread(acc_thread,     1, 8192);
   tid_iridium  = threads.addThread(iridium_thread, 1, 16000);
   tid_imu      = threads.addThread(imu_thread,     1, 8192);
-  tid_compress = threads.addThread(compress_thread,1, 80000);
+  tid_compress = threads.addThread(compress_thread,1, 100000);
   tid_cap      = threads.addThread(cap_thread,     1, 2048);
 
   tid_sleep    = threads.addThread(sleep_thread,   1, 2048);
