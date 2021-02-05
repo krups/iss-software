@@ -173,7 +173,7 @@ public:
       safePrintln("error opening file");
       return;
     }
-    safePrint("wanting "); safePrint(sizeRequest); safePrintln("bytes");
+    //safePrint("wanting "); safePrint(sizeRequest); safePrintln("bytes");
     char type_buf[1];
     _fh.read(type_buf, 1);
     _fh.seek(0);
@@ -203,30 +203,86 @@ public:
     }
     packet_size += 1; // for packet ID char
     
-    safePrint("packet size is "); safePrint(packet_size); safePrintln(" bytes");
+    //safePrint("packet size is "); safePrint(packet_size); safePrintln(" bytes");
     
     unsigned long num_samples_needed = floor((float)sizeRequest/((float)packet_size));
     unsigned long num_packets_available = (unsigned long)floor(((float)_fh.size())/((float)packet_size));
-    unsigned long interval = (unsigned long)floor(((float)num_packets_available)/((float)num_samples_needed));
     
-    safePrint("num_samples_needed:    "); safePrintln(num_samples_needed);
-    safePrint("num_packets_available: "); safePrintln(num_packets_available);
-    safePrint("interval:              "); safePrintln(interval);
-    int i=0;
-    for( i = 0; i < num_samples_needed; i++ ){
-      int loc = i*packet_size*interval;
-      safePrint("  seeking to "); safePrintln(loc);
-      _fh.seek(loc);
-      safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
-      _fh.read(&sam_buf[i*(packet_size)], packet_size);
+    if( num_packets_available < num_samples_needed ){
+      num_samples_needed = num_packets_available;
     }
     
-    *sizeActual = (i * packet_size) - 1;
+    unsigned long interval = (unsigned long)floor(((float)num_packets_available)/((float)num_samples_needed));
+    
+    //safePrint("num_samples_needed:    "); safePrintln(num_samples_needed);
+    //safePrint("num_packets_available: "); safePrintln(num_packets_available);
+    //safePrint("interval:              "); safePrintln(interval);
+    int i=0;
+    *sizeActual = 0;
+    for( i = 0; i < num_samples_needed; i++ ){
+      int loc = i*packet_size*interval;
+      //safePrint("  seeking to "); safePrintln(loc);
+      _fh.seek(loc);
+      //safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
+      *sizeActual += _fh.read(&sam_buf[i*(packet_size)], packet_size);
+    }
+    
+    //*sizeActual = (i * packet_size);
     
     _fh.close();
 
   }
-  
+
+  // Get the latest packet from the file specified by `id`. 
+  // `sam_buf` must have enough space allocated for the given packet type.
+  int latest_packet(int id, byte* sam_buf){
+    int bytes_read = 0;
+    if( !_idValid(id) ){
+      safePrintln("attempt to sample file with ID that doesn't exist");
+      return;
+    }
+    // open file referenced by id
+    _fh = SD.open(_fnames[id].c_str(), FILE_READ);
+    if( !_fh ) {
+      safePrintln("error opening file");
+      return -1;
+    }
+   
+    int packet_size;
+    switch (id)
+    {
+    case LOGID_TELEM:
+      packet_size = TELEM_T_SIZE;
+      break;
+/*    case PTYPE_ACCELSTATS:
+      packet_size = ACC_STAT_T_SIZE;
+      break;
+    case PTYPE_TC:
+      packet_size = TC_T_SIZE;
+      break;
+    case PTYPE_ACCEL:
+      packet_size = ACC_T_SIZE;
+      break;
+    case PTYPE_IMU:
+      packet_size = IMU_T_SIZE;
+      break;*/
+    default:
+      if(USBSERIAL_DEBUG) {safePrint(_fnames[id]); safePrintln(" has an unexpected layout.");}
+      return -1;
+      break;
+    }
+    packet_size += 1;
+    unsigned int start_loc = _fh.size() -  packet_size;
+    //safePrint("latest_packet:  seeking to "); safePrint(start_loc);
+    _fh.seek(start_loc);
+
+    //safePrint("and reading "); safePrint(packet_size); safePrintln("bytes");
+    bytes_read += _fh.read(sam_buf, packet_size);
+    _fh.close();
+    
+    return bytes_read;
+} 
+
   bool isReady() { return _ready; }
 
   uint8_t logNum() { return _logNum; }

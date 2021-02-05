@@ -16,6 +16,7 @@
 
 RadioLogger station;
 
+#define USBSERIAL_DEBUG 1
 
 void safePrint(String s) {
   //ser_lock.lock();
@@ -48,6 +49,8 @@ void setup()
     digitalWrite(LED, LOW);
     Serial.println("radio failed to init");
   }
+
+  station.setRetries(2);
 }
 
 void loop() {

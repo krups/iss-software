@@ -61,6 +61,7 @@ int main(int argc, char** argv)
   unsigned long i = 0;
   
   for( i=0; i<length; i++ ){
+    if( DEBUG ) std::cout << "i=" << i << std::endl;
     //std::cout << "reading in byte" << buffer[i] << ", i=" << i << std::endl;
     switch((char)buffer[i]){
       case PTYPE_TELEM:

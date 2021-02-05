@@ -423,6 +423,8 @@ public:
   Packet** packets() { return pbuf; }
 
   bool available() { return rf69_manager.available(); }
+  
+  bool sleep() { return rf69.sleep(); }
 
   void setRetries(uint8_t re) { rf69_manager.setRetries(re); }
   uint8_t getRetries() { return rf69_manager.retries(); }

@@ -20,12 +20,12 @@ TcInterface::TcInterface( char* tc_types,
 {}
 
 bool TcInterface::enable(void){
-    digitalWrite(SPI_US, HIGH);
+    /*digitalWrite(SPI_US, HIGH);
     if(digitalRead(SPI_THEM)){
         enabled = false;
         return false;
     }
-    else{
+    else{*/
         pinMode(cs_tc1, OUTPUT);
         pinMode(cs_tc2, OUTPUT);
         pinMode(MOSI, OUTPUT);
@@ -47,7 +47,7 @@ bool TcInterface::enable(void){
           enabled = true;
           return true;
         }
-    }
+    //}
 }
 
 void TcInterface::disable(void){
@@ -58,7 +58,7 @@ void TcInterface::disable(void){
     pinMode(SCK, INPUT);
     pinMode(mux0, INPUT);
     pinMode(mux1, INPUT);
-    digitalWrite(SPI_US, LOW);
+    //digitalWrite(SPI_US, LOW);
     enabled = false;
 }
 //float* arr, uint8_t* faults
@@ -105,17 +105,17 @@ bool TcInterface::read_all(tcv_t *dest, bool force){
             }
         
             dest->data[state]   = max1.readThermocoupleTemperature();
-            if( state + 4 < TC_COUNT){
+            //if( state + 4 < TC_COUNT){
               dest->data[state+4] = max2.readThermocoupleTemperature();
-            }
+            //}
             if(state == 3){
                 // Before we start another round, check to see 
                 // if we need to let the other processor have control
-                if(digitalRead(SPI_THEM)){
+                /*if(digitalRead(SPI_THEM)){
                   safePrintln("disabling");
                     disable();
                     return true;
-                }
+                }*/
             }
             
         } 

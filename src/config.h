@@ -19,7 +19,14 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_SHUTTLE
+#define MISSION_TYPE         MISSION_TEST_JSC
+
+// auto send packets 
+#define CONFIG_AUTO_BUILD_PACKETS 1
+
+// activation source config
+#define CONFIG_USE_ACT_TC    0
+#define CONFIG_USE_ACT_CAP   1
 
 //////////////////////////////////////////
 // real mission for the two capsules with shuttle tile TPS
@@ -44,14 +51,14 @@
   #define TC_THRESHOLD         100.0 // degrees celcius
   #define TC_CONSENSUS         4   // number of TCs that need to exceed threshold
   
-  #define TC_TYPE_STRING       "RKRKR" 
+  #define TC_TYPE_STRING       "RKKRK" 
 #endif
 
 // ground trial setup for shuttle tile TPS capsules
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_SHUTTLE)
   #define USBSERIAL_DEBUG      0
-  #define ISM_DEBUG            1
+  #define ISM_DEBUG            0
   #define TC_COUNT             4
   #define TC_THRESHOLD         100.0 // degrees celcius
   #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
@@ -62,13 +69,13 @@
 // ground trial setup for the capsule with JSC TPS 
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_JSC)
-  #define USBSERIAL_DEBUG      1
-  #define ISM_DEBUG            1
-  #define TC_COUNT             5
+  #define USBSERIAL_DEBUG      0
+  #define ISM_DEBUG            0
+  #define TC_COUNT             4
   #define TC_THRESHOLD         1700.0 // degrees celcius
-  #define TC_CONSENSUS         4   // number of TCs that need to exceed threshold
+  #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
   
-  #define TC_TYPE_STRING       "RKRKR" 
+  #define TC_TYPE_STRING       "RKKRK" 
 #endif
 
 
@@ -90,7 +97,7 @@
 #define LOGNAME_SYS             "sys"
 
 // default log intervals in milliseconds
-#define LOGINT_TELEM            500
+#define LOGINT_TELEM            1000
 #define LOGINT_TC               1000
 #define LOGINT_ACC              100
 #define LOGINT_IMU              100
@@ -108,8 +115,9 @@
 /************************************************************************************************
 * battery voltage calibration
 */
-#define VBAT_CAL                0
-
+//#define VBAT_DIV                0.50761421319 // for board "X",   R6=97k   to Vin, R7=100k to GND
+#define VBAT_DIV                0.542        // for board "1",   R6=96.8k to Vin, R7=99.3k to GND
+//#define VBAT_DIV                0.5046        // for board "2",   R6=97.3k to Vin, R7=99.1k to GND
 
 /************************************************************************************************
 * queue size control (applies to both ISM debug and SD log. 
@@ -122,6 +130,13 @@
 /************************************************************************************************
 * SLEEP CONFIG
 */
-#define SLEEP_TIME_AWAKE              (int)10000 //when the sleep thread wakes up, stay awake for this long
-#define SLEEP_DURATION_MINUTES    30
+#define CONFIG_AUTOMATIC_SLEEP  1
+#define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
+#define SLEEP_DURATION_MINUTES  1440 // 1440 min = 24 hrs
+
+/************************************************************************************************
+* LED CONFIG
+*/
+#define CONFIG_USE_LEDS         0
+
 #endif
