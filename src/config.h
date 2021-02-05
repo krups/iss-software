@@ -19,10 +19,14 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_SHUTTLE
+#define MISSION_TYPE         MISSION_TEST_JSC
 
+// auto send packets 
+#define CONFIG_AUTO_BUILD_PACKETS 1
+
+// activation source config
 #define CONFIG_USE_ACT_TC    0
-#define CONFIG_USE_ACT_CAP   0
+#define CONFIG_USE_ACT_CAP   1
 
 //////////////////////////////////////////
 // real mission for the two capsules with shuttle tile TPS
@@ -54,7 +58,7 @@
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_SHUTTLE)
   #define USBSERIAL_DEBUG      0
-  #define ISM_DEBUG            1
+  #define ISM_DEBUG            0
   #define TC_COUNT             4
   #define TC_THRESHOLD         100.0 // degrees celcius
   #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
@@ -66,10 +70,10 @@
 //////////////////////////////////////////
 #if (MISSION_TYPE == MISSION_TEST_JSC)
   #define USBSERIAL_DEBUG      0
-  #define ISM_DEBUG            1
-  #define TC_COUNT             5
+  #define ISM_DEBUG            0
+  #define TC_COUNT             4
   #define TC_THRESHOLD         1700.0 // degrees celcius
-  #define TC_CONSENSUS         4   // number of TCs that need to exceed threshold
+  #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
   
   #define TC_TYPE_STRING       "RKKRK" 
 #endif
@@ -93,7 +97,7 @@
 #define LOGNAME_SYS             "sys"
 
 // default log intervals in milliseconds
-#define LOGINT_TELEM            500
+#define LOGINT_TELEM            1000
 #define LOGINT_TC               1000
 #define LOGINT_ACC              100
 #define LOGINT_IMU              100
@@ -126,13 +130,13 @@
 /************************************************************************************************
 * SLEEP CONFIG
 */
-#define CONFIG_AUTOMATIC_SLEEP  0
+#define CONFIG_AUTOMATIC_SLEEP  1
 #define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
 #define SLEEP_DURATION_MINUTES  1440 // 1440 min = 24 hrs
 
 /************************************************************************************************
 * LED CONFIG
 */
-#define CONFIG_USE_LEDS         1
+#define CONFIG_USE_LEDS         0
 
 #endif

@@ -16,6 +16,7 @@
 
 RadioLogger station;
 
+#define USBSERIAL_DEBUG 1
 
 void safePrint(String s) {
   //ser_lock.lock();
