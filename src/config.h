@@ -19,13 +19,13 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_JSC
+#define MISSION_TYPE         MISSION_REAL_SHUTTLE
 
 // auto send packets 
 #define CONFIG_AUTO_BUILD_PACKETS 1
 
 // activation source config
-#define CONFIG_USE_ACT_TC    0
+#define CONFIG_USE_ACT_TC    1
 #define CONFIG_USE_ACT_CAP   1
 
 //////////////////////////////////////////
@@ -34,7 +34,7 @@
   #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            0
   #define TC_COUNT             4
-  #define TC_THRESHOLD         100.0 // degrees celcius
+  #define TC_THRESHOLD         10.0 // degrees celcius
   #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
   
   // TODO: refer to TcInterface for which physical connections these are if all
@@ -47,9 +47,9 @@
 #if (MISSION_TYPE == MISSION_REAL_JSC)
   #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            0
-  #define TC_COUNT             5
-  #define TC_THRESHOLD         100.0 // degrees celcius
-  #define TC_CONSENSUS         4   // number of TCs that need to exceed threshold
+  #define TC_COUNT             4
+  #define TC_THRESHOLD         10.0 // degrees celcius
+  #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
   
   #define TC_TYPE_STRING       "RKKRK" 
 #endif
@@ -60,7 +60,7 @@
   #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            0
   #define TC_COUNT             4
-  #define TC_THRESHOLD         100.0 // degrees celcius
+  #define TC_THRESHOLD         10.0 // degrees celcius
   #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
   
   #define TC_TYPE_STRING       "KKKK" 
@@ -72,7 +72,7 @@
   #define USBSERIAL_DEBUG      0
   #define ISM_DEBUG            0
   #define TC_COUNT             4
-  #define TC_THRESHOLD         1700.0 // degrees celcius
+  #define TC_THRESHOLD         10.0 // degrees celcius
   #define TC_CONSENSUS         3   // number of TCs that need to exceed threshold
   
   #define TC_TYPE_STRING       "RKKRK" 

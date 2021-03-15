@@ -945,7 +945,7 @@ void compress_thread(int inc) {
       mBuildPacket = false;
       safeAssign(&buildPacket, false, &buildPacket_lock);
     }
-    threads.delay(5000);
+    threads.delay(15000);
   }
 }
 
@@ -977,6 +977,11 @@ void sleep_thread(int inc) {
   // SLEEP CONTROL prior to activation
   while (1) {
 
+    // delay to allow TC thread to take some measurements before deciding on activation
+    // chance to make a TC measurement and update our decicision about activation
+    // this should be long enough to create our logs
+    threads.delay(SLEEP_TIME_AWAKE);
+
     // check activation status
     safeUpdate(&mTcAct, &tcAct, &tcAct_lock);
     safeUpdate(&mCpAct, &capAct, &capAct_lock);
@@ -989,6 +994,14 @@ void sleep_thread(int inc) {
       mAct = mCpAct;
     } else {
       safeUpdate(&mAct, &activation, &act_lock);
+    }
+
+    // if the cap sensor is activated, but overall activation didn't happen
+    //  then we really shouldnt go back to sleep because
+    // more than likely the thermocouples just need to catch up
+    if( CONFIG_USE_ACT_TC && CONFIG_USE_ACT_CAP && mCpAct && !mAct ){
+      // just go up and wait then check activation sources again
+      continue;
     }
     
     if ( mAct ) {
@@ -1004,11 +1017,6 @@ void sleep_thread(int inc) {
     switch (state) {
       // not activated, need to sleep
       case 0:
-        // TODO:
-        // need logic to prevent sleep thread starting sleep before we have had a
-        // chance to make a TC measurement and update our decicision about activation
-        // this should be long enough to create our logs
-        threads.delay(SLEEP_TIME_AWAKE);
 
         // for testing, we will just idle in this state until receiving a debug command telling us to sleep
         // this prevents early disconnects in serial logging etc
@@ -1020,6 +1028,7 @@ void sleep_thread(int inc) {
           }
         } 
 
+        // the above can be overriden by automatic sleep:
         if( CONFIG_AUTOMATIC_SLEEP ){        
           // for real mission, go to sleep after the initial delay specified above
           safeAssign(&needSleep, true, &ns_lock);
@@ -1307,16 +1316,21 @@ void tc_thread(int inc) {
         }
       }
 
-      // LOG THE DATA 
-      // push packet into tc data queue to be logged
-      while ( !tcq_lock.lock(100) ); // get lock for telem packet log queue
-      if ( tcq_count + 1 < MAX_TCQ_SIZE ) {
-        //if (USBSERIAL_DEBUG) safePrintln("creating tc packet ");
-        tcdataq[tcq_write] = new TcPacket(mTcReadings.data, nn);
-        tcq_write = (tcq_write + 1) % MAX_TCQ_SIZE;
-        tcq_count += 1;
+      // quick hack
+      // only log data since activation
+      if( mAct ){
+        // LOG THE DATA 
+        // push packet into tc data queue to be logged
+        while ( !tcq_lock.lock(100) ); // get lock for telem packet log queue
+        if ( tcq_count + 1 < MAX_TCQ_SIZE ) {
+          //if (USBSERIAL_DEBUG) safePrintln("creating tc packet ");
+          tcdataq[tcq_write] = new TcPacket(mTcReadings.data, nn);
+          tcq_write = (tcq_write + 1) % MAX_TCQ_SIZE;
+          tcq_count += 1;
+        }
+        tcq_lock.unlock();
+
       }
-      tcq_lock.unlock();
 
       // radio log
       // push another copy of our data into queue for radio log if enabled
@@ -1336,6 +1350,7 @@ void tc_thread(int inc) {
       
     } else {
       // no new tc data
+      threads.yield();
     }
     threads.delay(20);
   }
@@ -1877,7 +1892,7 @@ void cap_thread(int inc) {
 
     //digitalWrite(LED_ACT, mCapVal);
 
-    threads.delay(200); // take cap sense readings at ~2hz
+    threads.delay(200); // take cap sense readings at ~5hz
   }
   
 }
