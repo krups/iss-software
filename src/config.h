@@ -19,7 +19,7 @@
 #define MISSION_TEST_JSC     4
 
 // mission type
-#define MISSION_TYPE         MISSION_TEST_JSC
+#define MISSION_TYPE         MISSION_TEST_SHUTTLE
 
 // auto send packets 
 #define CONFIG_AUTO_BUILD_PACKETS 1
@@ -132,7 +132,7 @@
 */
 #define CONFIG_AUTOMATIC_SLEEP  1
 #define SLEEP_TIME_AWAKE        (int)10000 //when the sleep thread wakes up, stay awake for this long
-#define SLEEP_DURATION_MINUTES  1440 // 1440 min = 24 hrs
+#define SLEEP_DURATION_MINUTES  5760 // 1440 min = 24 hrs
 
 /************************************************************************************************
 * LED CONFIG
