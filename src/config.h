@@ -25,7 +25,7 @@
 #define CONFIG_AUTO_BUILD_PACKETS 1
 
 // activation source config
-#define CONFIG_USE_ACT_TC    1
+#define CONFIG_USE_ACT_TC    0
 #define CONFIG_USE_ACT_CAP   1
 
 //////////////////////////////////////////
