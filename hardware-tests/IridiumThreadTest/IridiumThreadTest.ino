@@ -29,12 +29,12 @@ ICM_20948_I2C myICM;
 //SnoozeUSBSerial usb;
 SnoozeDigital   snoozeDigital;
 SnoozeSPI       snoozeSPI;
-SnoozeTimer     timer;
+//SnoozeTimer     timer;
 #if USBSERIAL_DEBUG
 SnoozeUSBSerial snoozeSerial;
-SnoozeBlock     config_teensy35(snoozeDigital, snoozeSPI, timer, snoozeSerial);
+SnoozeBlock     config_teensy35(snoozeDigital, snoozeSPI, snoozeSerial);
 #else
-SnoozeBlock     config_teensy35(snoozeDigital, snoozeSPI, timer);
+SnoozeBlock     config_teensy35(snoozeDigital, snoozeSPI);
 #endif
 
 Threads::Mutex ns_lock; // need sleep lock, access to needSleep var
@@ -1968,7 +1968,7 @@ void setup() {
   snoozeSPI.setClockPin(13);
 
   // configure teensy snooze library classes
-  timer.setTimer(60000); // sleep one minute at a time
+  //timer.setTimer(60000); // sleep one minute at a time
 
   // configure interrupt to wake functionality for the sleep driver
   // on the pin that connects to the capacitive sense pin, we want to wake from sleep
