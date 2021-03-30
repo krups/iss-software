@@ -1010,7 +1010,7 @@ void sleep_thread(int inc) {
       // let the threads know sleeping has finished      
       safeAssign(&needSleep, false, &ns_lock);
       safeAssign(&activation, true, &act_lock);
-      tone(PIN_BUZZER, 1000);
+      //tone(PIN_BUZZER, 1000);
       break;
     }
 
@@ -1123,9 +1123,9 @@ void sleep_thread(int inc) {
   }
 
   // let the activation buzzer run for three seconds
-  threads.delay(3000);
-  noTone(PIN_BUZZER);
-  digitalWrite(PIN_BUZZER, LOW);
+  //threads.delay(3000);
+  //noTone(PIN_BUZZER);
+  //digitalWrite(PIN_BUZZER, LOW);
 
   // now we are activated!
   while (1) {
@@ -1937,23 +1937,23 @@ void setup() {
   pinMode(PIN_BAT_SENSE, INPUT);
 
   // startup beep
-  pinMode(PIN_BUZZER, OUTPUT);
-  //digitalWrite(PIN_BUZZER, LOW);
-  tone(PIN_BUZZER, 1000);
-  delay(200);
-  noTone(PIN_BUZZER);
-  delay(100);
-  tone(PIN_BUZZER, 1000);
-  delay(200);
-  noTone(PIN_BUZZER);
-  delay(100);
-  tone(PIN_BUZZER, 1000);
-  delay(200);
-  noTone(PIN_BUZZER);
-  delay(100);
-  tone(PIN_BUZZER, 1000);
-  delay(200);
-  noTone(PIN_BUZZER);
+//  pinMode(PIN_BUZZER, OUTPUT);
+//  //digitalWrite(PIN_BUZZER, LOW);
+//  tone(PIN_BUZZER, 1000);
+//  delay(200);
+//  noTone(PIN_BUZZER);
+//  delay(100);
+//  tone(PIN_BUZZER, 1000);
+//  delay(200);
+//  noTone(PIN_BUZZER);
+//  delay(100);
+//  tone(PIN_BUZZER, 1000);
+//  delay(200);
+//  noTone(PIN_BUZZER);
+//  delay(100);
+//  tone(PIN_BUZZER, 1000);
+//  delay(200);
+//  noTone(PIN_BUZZER);
   pinMode(PIN_BUZZER, INPUT);
 
   
