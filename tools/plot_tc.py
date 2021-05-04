@@ -4,7 +4,9 @@
 # Matt Ruffner 2021
 # University of Kentucky
 #
-# Given a list of iridium packets 
+# Given a list of iridium packets, decompress them and convert them to CSV files
+# then read in those CSV files and perform a 5 point median filter on the data
+# then plot for analysis and inspection of the data 
 
 import os
 import sys
@@ -14,12 +16,14 @@ import matplotlib.pyplot as plt
 from scipy import ndimage, misc
 
 if len(sys.argv) < 2:
-    print("Need input file(s) as arg.")
+    print("Need input file(s) as arg, need to be compressed iridium packets.")
     sys.exit(1)
 
 numInputs = len(sys.argv)-1
 
-# check if input is compressed or uncompressed
+# iterate over input files which are assumed to be compressed iridium packets
+# containing data as described in src/packets.h
+# uses tools which are assumed to be built (decompress and binlog_to_csv)
 for i in range(0, numInputs):
     outfile = sys.argv[i+1]+'.dat'
     cmdStr = os.getcwd()+'/bin/decompress ' + sys.argv[i+1] + ' ' + outfile;

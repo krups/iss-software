@@ -6,6 +6,10 @@ These utilities for decompressing and decoding binary packets from the Iridium s
 
 To plot the data in a set of Iridium packets, first run the build script with ```sh build.sh``` which creates the directory ```bin``` and compiles the two helper programs. The necessary source for these two programs is in the ```src/``` directory and only rely on standard C++ header libraries.
 
+To use the plotting utilility, a working python3 environment is needed with several common data analysis packages installed including:
+- numpy
+- matplotlib
+- scipy (for median filtering implementation)
 
 ### Decompressing and decoding packets
 
