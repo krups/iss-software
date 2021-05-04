@@ -21,7 +21,11 @@ First, the ```decompress``` tool must be used such as in
 ==> ./bin/decompress infile.sbd outfile.sbd.dat
 ```
 
-with an infile and outfile as mandatory arguments. Then the ```binlog_to_csv``` tool can be used to decode the packets according to the definitions in	```src/packets.h``` within the ```tools``` directory.
+with an infile and outfile as mandatory arguments. Then the ```binlog_to_csv``` tool can be used to decode the packets according to the definitions in	```src/packets.h``` within the ```tools``` directory such as in
+
+```
+==> ./bin/binlog_to_csv decompressed_packet.dat
+```
 
 ### Usage
 
