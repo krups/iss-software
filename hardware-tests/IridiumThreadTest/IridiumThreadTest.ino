@@ -236,7 +236,7 @@ int tid_sd       = -1,
 * Parachute Deployment Thresholds
 */
 
-int parachute_time = 550000; // 550 seconds
+int parachute_time = 373000; // 550 seconds
 float accelerometer_threshold = 1E-2; // | accel | < 0.01 m/s^2
 int total_necessary_accel_time = 5000;  // Make sure it stayed at "0" for 5 seconds
 
@@ -1918,14 +1918,14 @@ void deploy_parachute(){ // Parachute Deployment function
 
 void par_thread(int inc){
   
-  bool deployed = false;
-  float x_accel_copy = -20.0;
-  float y_accel_copy = -20.0;
-  float z_accel_copy = -20.0;
+//   bool deployed = false;
+//   float x_accel_copy = -20.0;
+//   float y_accel_copy = -20.0;
+//   float z_accel_copy = -20.0;
   
-  int elapsed_accel_time = 0;
+//   int elapsed_accel_time = 0;
   
-  int initial_accel_time = 0;
+//   int initial_accel_time = 0;
   
   while(1){
     
@@ -1933,9 +1933,9 @@ void par_thread(int inc){
     
     int timer = safeMillis();
     
-    x_accel_copy = analogRead(PIN_ACC_X)
-    y_accel_copy = analogRead(PIN_ACC_Y)
-    z_accel_copy = analogRead(PIN_ACC_Z)
+//     x_accel_copy = analogRead(PIN_ACC_X)
+//     y_accel_copy = analogRead(PIN_ACC_Y)
+//     z_accel_copy = analogRead(PIN_ACC_Z)
     
     // Or 
     
@@ -1944,26 +1944,30 @@ void par_thread(int inc){
     // z_accel_copy = myICM.accZ();
     
     if (timer > parachute_timer){ // If we're past the time (Define time in the preamble)
-      if (USBSERIAL_DEBUG) safePrintln("Parachute: past deployment time, checking accelerometer data");
-      if ((abs(x_accel_copy) < accelerometer_threshold) && (abs(y_accel_copy) < accelerometer_threshold) && (abs(z_accel_copy) < accelerometer_threshold)) { // check if accelerometer data is correct (Define threshold in the preamble, currently set as 1E-2)
+//       if (USBSERIAL_DEBUG) safePrintln("Parachute: past deployment time, checking accelerometer data");
+//       if ((abs(x_accel_copy) < accelerometer_threshold) && (abs(y_accel_copy) < accelerometer_threshold) && (abs(z_accel_copy) < accelerometer_threshold)) { // check if accelerometer data is correct (Define threshold in the preamble, currently set as 1E-2)
         
-        if (USBSERIAL_DEBUG) safePrintln("Parachute: accelerometer data matches");
+//         if (USBSERIAL_DEBUG) safePrintln("Parachute: accelerometer data matches");
         
-        if (initial_accel_time == 0) { // Record time when acceleration first met the parameters
-          initial_accel_time = timer;
-        }
+//         if (initial_accel_time == 0) { // Record time when acceleration first met the parameters
+//           initial_accel_time = timer;
+//         }
         
-        elapsed_accel_time = timer - initial_accel_time;
+//         elapsed_accel_time = timer - initial_accel_time;
         
-        if (elapsed_accel_time > total_necessary_accel_time){ // If enough time has passed with the acceleration meeting the threshold, deploy! (Define time in the preamble)
-          if (USBSERIAL_DEBUG) safePrintln("Parachute: accelerometer data matches and total necessary time has been met");
-          deployed = true;
-        }
+//         if (elapsed_accel_time > total_necessary_accel_time){ // If enough time has passed with the acceleration meeting the threshold, deploy! (Define time in the preamble)
+//           if (USBSERIAL_DEBUG) safePrintln("Parachute: accelerometer data matches and total necessary time has been met");
+//           deployed = true;
+//         }
         
-      }
-      else if (initial_accel_time != 0) { // Reset timer in case acceleration doesn't continue to meet the threshold
-        initial_accel_time = 0;
-      }
+//       }
+//       else if (initial_accel_time != 0) { // Reset timer in case acceleration doesn't continue to meet the threshold
+//         initial_accel_time = 0;
+//       }
+       
+       if (USBSERIAL_DEBUG) safePrintln("Parachute: past deployment time, deploying!!!!");
+       deployed = true
+       
     }
     
     if (deployed){
