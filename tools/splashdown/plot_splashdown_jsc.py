@@ -46,7 +46,7 @@ ax.coastlines()
 #              crs=crs.PlateCarree()) ## Important
 
 # zoomed view of final points
-ax.set_extent([-151.4, -150.4, -36, -37],
+ax.set_extent([-150.7, -150.55, -36.75, -36.9],
               crs=crs.PlateCarree()) ## Important
 
 
@@ -71,7 +71,7 @@ gl.xlines = True
 gl.ylines = True
 
 
-plt.title("AMTPS Capsule Packet Locations")
+#plt.title("AMTPS Capsule Packet Locations")
 
 
 

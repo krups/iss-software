@@ -38,12 +38,12 @@ ax.coastlines()
 #ax.add_feature(cfeature.STATES)
 
 # full view
-#ax.set_extent([-158, -147, -30, -40],
-#              crs=crs.PlateCarree()) ## Important
+ax.set_extent([-158, -147, -30, -40],
+              crs=crs.PlateCarree()) ## Important
 
 # zoomed view of final points
-ax.set_extent([-151.4, -150.4, -36, -37],
-              crs=crs.PlateCarree()) ## Important
+#ax.set_extent([-151.4, -150.4, -36, -37],
+#              crs=crs.PlateCarree()) ## Important
 
 
 for row in li2200_data:
@@ -74,7 +74,7 @@ gl.ylines = True
 #gl.xlabel_style = {'size': 15, 'color': 'gray'}
 #gl.xlabel_style = {'color': 'black', 'weight': 'bold'}
 
-plt.title("LI2200 Capsule Packet Locations")
+#plt.title("LI2200 Capsule Packet Locations")
 
 def genCircle2(cx=0, cy=0, rad=1):
   """Generate points along perimeters of a circle"""
@@ -103,6 +103,8 @@ def genCircle2(cx=0, cy=0, rad=1):
 
 plt.show(block=False)
 
+plot_title = "LI2200 Capsule Packet Locations"
+plt.savefig("images/{}.png".format(plot_title),dpi=300,bbox_inches='tight')
 
 #plt.savefig("images/{}.png".format(plot_title),dpi=300,bbox_inches='tight')
 
