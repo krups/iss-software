@@ -1,6 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#define USE_DEBUG_RADIO 1
 #define DEBUG 1 // usb serial debug switch
 #ifdef DEBUG
   //#define DEBUG_GPS 1 // print raw gga to serial
@@ -23,6 +24,18 @@
 #define UNIT_SCALE 10 // multiplier applied
 
 #define PRS_UNIT_SCALE 100 // multiplier for pressure data
+
+
+#define FREQUENCY     RF69_915MHZ
+#define ENCRYPTKEY    "sampleEncryptKey"
+#define NETWORK_ID    100
+#define NODE_ADDRESS_STATION    1
+#define NODE_ADDRESS_TESTNODE   2
+#define NODE_ADDRESS_KREPE2_001 3
+#define NODE_ADDRESS_KREPE2_002 4
+#define NODE_ADDRESS_KREPE2_003 5
+#define NODE_ADDRESS_KREPE2_004 6
+#define NODE_ADDRESS_KREPE2_005 7
 
 // uncomment to enable GPS
 // gps sample period is default 1Hz
@@ -66,6 +79,10 @@
 #define LOGFILE_NAME              "LG000.DAT"
 #define LOGFILE_NAME_LENGTH 10 // including null terminator
 
+#define RADIO_TX_BUFSIZE 1024
+#define RADIO_RX_BUFSIZE 512
+
+// header info has definitions of packet types and sizes for reference when decoding
 #define LOGBUF_HEADER_SIZE 2048
 
 // log buffer size in bytes (how many to accumulate before a write)

@@ -19,6 +19,7 @@
 #include <semphr.h>
 #include <SD.h>
 #include <SPI.h>
+#include <RFM69.h>
 #include <Servo.h>
 #include "wiring_private.h"
 
@@ -124,7 +125,7 @@ TaskHandle_t Handle_imuTask; // imu and acc task
 TaskHandle_t Handle_prsTask; // barometric sensor task
 TaskHandle_t Handle_radTask; // telem radio task handle
 TaskHandle_t Handle_monitorTask; // debug running task stats over uart task
-TaskHandle_t Handle_bsmsTask; // Spectrometer task
+TaskHandle_t Handle_bsmsTask; // battery and spectrometer measurement (BSMS) task
 
 // freeRTOS semaphores
 SemaphoreHandle_t dbSem; // serial debug logging (Serial)
@@ -141,6 +142,15 @@ SemaphoreHandle_t sdSem; // sd card access
 // receive and send buffers for iridium transmission
 uint8_t rbuf[RBUF_SIZE];
 char sbuf[SBUF_SIZE];
+
+// variables for the debug radio
+static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
+static uint16_t radioTxBufSize = 0;
+static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
+static uint16_t radioRxBufSize = 0;
+#ifdef USE_DEBUG_RADIO
+RFM69 radio; // debug radio object
+#endif
 
 // variables for the ping pong loging buffers
 static uint8_t logBuf1[LOGBUF_BLOCK_SIZE];
@@ -196,24 +206,147 @@ static void BSMSThread(void *pvParameters)
 {
   // TODO: receive data over UART from BSMS
 
+  float vbat = 0.0;
+
   while (1)
   {
+    // measure VBAT voltage
+    vbat = analogRead(PIN_VBAT) / 1023.0 * 3.3 * 2.0;
+
+    // vin = measurement from BSMS
+
+    // read in spectrometer over Serial4
   
     myDelayMs(1000);
   }
+
+  vTaskDelete( NULL );
 }
 
 // communicate with NeoPi for packet creation
 static void piThread(void *pvParameters)
 {
-  // TODO: receive data over UART from BSMS
+  // TODO: receive data over UART from BSMS Serial1
 
   while (1)
   {
-  
+    // monitor the overflow buffer and send all that information over the pi serial so it can log it 
+    // and use it to build packets
+
+    // send the magic byte to ask for a binary packet back to send, then place that in the iridium buffer. 
+    
   }
+
+  vTaskDelete( NULL );
 }
 
+
+// radio thread
+// in charge of the RFM69 debug radio 
+// sending packets out as telemetry and receiving commands and 
+// dispatching them to other threads
+// see node demo sketch for reference: https://github.com/LowPowerLab/RFM69/blob/master/Examples/Node/Node.ino
+
+static void radThread(void *pvParameters)
+{
+  bool initOk = true;
+  
+  radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
+  radio.setHighPower(); //must include this only for RFM69HW/HCW!
+  radio.encrypt(ENCRYPTKEY);
+
+  int rxBufPos = 0;
+  int txBufPos = 0;
+
+  while( 1 ){
+
+    // first get access to SPI bus
+    if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      
+      // check for any received packets, but only if they will fit in our RX buffer
+      if (radio.receiveDone())
+      {
+        if( (radioRxBufSize + radio.DATALEN) < RADIO_RX_BUFSIZE) {
+          memcpy(radioRxBuf, radio.DATA, radio.DATALEN);
+
+          #ifdef DEBUG_RADIO
+          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+            Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
+            for (byte i = 0; i < radio.DATALEN; i++)
+              Serial.print((char)radio.DATA[i]);
+            Serial.print("   [RX_RSSI:");Serial.print(radio.RSSI);Serial.print("]");
+            xSemaphoreGive( dbSem );
+          }
+          #endif
+        }
+
+        // ack even if we didb't copy the data to our buffer
+        if (radio.ACKRequested())
+        {
+          radio.sendACK();
+          #ifdef DEBUG_RADIO
+          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+            //Serial.print(" - ACK sent");
+            xSemaphoreGive( dbSem );
+          }
+          #endif
+        }
+          
+        }
+        
+      
+      xSemaphoreGive( sdSem );
+    } // end sd access
+
+    // now check if we have any packets in the TX buffer.
+
+    // if there are packets of data in the Tx buffer 
+    // the get the sd semaphore and try to send all that are in there
+    // sending with retry can take time, so put the spi access semaphore inside the send loop
+    txBufPos = 0;
+    // need to get access to send buffer and SD buffer
+    if( radioTxBufSize > 0 ){
+      
+      // we can only send 60 bytes at a time, so look through the buffer and send as much as possible 
+      // at once until the buffer is empty
+      while (radioTxBufSize - txBufPos > 0)
+      {
+        // first get access to SPI bus
+        if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+
+          // if there is more than 60 bytes in the send buffer, send 60 of it over and over
+          if( (radioTxBufSize - txBufPos) > 60 ){
+            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], 60 )){
+              // success
+              //Serial.print(" ok!");
+              txBufPos += 60;
+            } else {
+              // sending failed
+              Serial.print(" nothing...");
+            }
+          } else { // else if there is 60 or less bytes in the send buffer, just send what is there
+            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], (radioTxBufSize - txBufPos) )){
+              // send success
+              //Serial.print(" ok!");
+              txBufPos += (radioTxBufSize - txBufPos);
+            } else {
+              // sending failed 
+              Serial.print(" nothing..."); 
+            }
+          }
+
+          
+
+          xSemaphoreGive( sdSem );
+        } // end access to the SPI bus
+      }
+
+      radioTxBufSize = 0;
+    } // end if radioTxBufSize > 0
+  }
+
+  vTaskDelete( NULL );
+}
 
 void ledColor(int type) {
   switch (type) {
@@ -620,7 +753,7 @@ static void prsThread( void *pvParameters )
         ps4.update();
         select_i2cmux_channel(MUXCHAN_PS5);
         ps5.update();
-        xSemaphoreGive( i2c1Sem ); // Now free or "Give" the Serial Port for others.
+        xSemaphoreGive( i2c1Sem ); 
       }
       
       #ifdef DEBUG_PRESSURE
@@ -631,7 +764,7 @@ static void prsThread( void *pvParameters )
         SERIAL.print(ps3.pressure()); SERIAL.print(", ");
         SERIAL.print(ps4.pressure()); SERIAL.print(", ");
         SERIAL.print(ps5.pressure()); SERIAL.println();
-        xSemaphoreGive( dbSem ); // Now free or "Give" the Serial Port for others.
+        xSemaphoreGive( dbSem ); 
       }
       #endif
       
@@ -649,10 +782,7 @@ static void prsThread( void *pvParameters )
       }
 
       // try to write this data to the log buffer
-      int logTries = 0;
-      while( logTries < 3){
-        logTries += writeToLogBuf(PTYPE_PRS, &data, sizeof(prs_t));
-      }
+      while( writeToLogBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
 
       myDelayMs(1000);
     } else {
@@ -1181,12 +1311,9 @@ static void compressionThread( void * pvParameters )
     }
 
     // try to write this data to the log buffer
-    int logTries = 0;
-    while( logTries < 3){
-      logTries += writeToLogBuf(PTYPE_PACKET, &packet, sizeof(packet_t));
-    }
+    while( writeToLogBuf(PTYPE_PACKET, &packet, sizeof(packet_t)) > 0);
 
-    // TESTING: build a packet every 15 seconds
+    // build a packet periodically
     myDelayMs(PACKET_BUILD_PERIOD);
   }
 
@@ -1249,10 +1376,8 @@ static void tcThread( void *pvParameters )
       }
 
       // try to write this data to the log buffer
-      int logTries = 0;
-      while( logTries < 3){
-        logTries += writeToLogBuf(PTYPE_TC, &data, sizeof(tc_t));
-      }
+      while( writeToLogBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+      
     }
 
     taskYIELD();
@@ -1262,7 +1387,8 @@ static void tcThread( void *pvParameters )
 }
 
 // helper to write a packet of data to the logfile
-int writeToLogBuf(int ptype, void* data, size_t size) {
+// ptype is a one byte id, where data holds size bytes of a struct
+int writeToLogBuf(uint8_t ptype, void* data, size_t size) {
   // try to write the tc data to the SD log buffer that is available
   if ( xSemaphoreTake( wbufSem, ( TickType_t ) 10 ) == pdTRUE ) {
     if( activeLog == 1 ){
@@ -1428,6 +1554,8 @@ if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
 
         written = logfile.write(logBuf1, LOGBUF_BLOCK_SIZE);
 
+        // copy this data to the logBufPrev buffer for sending over radio 
+
         // clean the buffer so we are gauranteed to see zeros where there hasn't
         // been recetn data written to
         memset(logBuf1, 0, LOGBUF_BLOCK_SIZE);
@@ -1537,10 +1665,22 @@ void setup() {
 
 
   // reset pin for lora radio
-  //pinMode(PIN_LORA_RST, OUTPUT);
+  pinMode(PIN_RADIO_RESET, OUTPUT);
+  pinMode(PIN_RADIO_SS, OUTPUT);
+  pinMode(PIN_3V32_CONTROL, OUTPUT);
+  pinMode(PIN_GATE_IR, OUTPUT);
+  pinMode(PIN_GATE_PI, OUTPUT);
+  pinMode(PIN_GATE_SPEC, OUTPUT);
 
   // battery voltage divider
   pinMode(PIN_VBAT, INPUT);
+
+  // manual reset on RFM69 radio, won't do anything if unpowered (3v32_ctrl pin)
+  pinMode(PIN_RADIO_RESET, OUTPUT);
+  digitalWrite(PIN_RADIO_RESET, HIGH);
+  delay(10);
+  digitalWrite(PIN_RADIO_RESET, LOW);
+  delay(10);
 
   Wire.begin();
   Wire.setClock(100000); // safer?
@@ -1655,8 +1795,8 @@ void setup() {
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
   xTaskCreate(compressionThread, "Data Compression", 512, NULL, tskIDLE_PRIORITY, &Handle_compTask);
-
-  //xTaskCreate(radThread, "Telem radio", 1000, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+  xTaskCreate(radThread, "Telem radio", 512, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+  
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
 
   // Start the RTOS, this function will never return and will schedule the tasks.
