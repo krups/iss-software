@@ -105,8 +105,8 @@ void onGgaUpdate(nmea::GgaData const);
 // TC to digital objects
 Adafruit_MCP9600 mcps[6];
 
-// I2C addresses on MCP breakout board, use this to assign proper channels
-// need to specify per breakout if addressing not consistent between boards
+// I2C addresses on KREPE flight computer v2.0+
+// Use this to assign proper channel numbering
 const uint8_t MCP_ADDRS[6] = {0x60, 0x61, 0x62, 0x63, 0x64, 0x67};
 
 // freertos task handles
@@ -137,6 +137,7 @@ SemaphoreHandle_t piBufSem; // access to the pi send buffer
 
 
 // buffers for the pi thread, containing recently created data to be sent to the Pi
+// each lines is a null terminated string to be filled by sprintf
 #define PIBUF1 0
 #define PIBUF2 1
 static uint8_t  ptxBuf1[PI_BUFFER_LINES][PI_LINE_SIZE];
