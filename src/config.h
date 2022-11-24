@@ -13,7 +13,7 @@
   #define DEBUG_PAR 1
   //#define DEBUG_RAD 1
   //#define DEBUG_SPEC 1
-  //#define DEBUG_IMU 1
+  #define DEBUG_IMU 1
   //#define DEBUG_TC
   //#define DEBUG_TPMS_TRANSFER
 //#define DEBUG_MCP_STARTUP
@@ -79,6 +79,12 @@
 #define LOGFILE_NAME              "LG000.DAT"
 #define LOGFILE_NAME_LENGTH 10 // including null terminator
 
+// pi buffer configuration
+// 5 lines of 200 chars each max string length
+#define  PI_BUFFER_LINES 10
+#define  PI_LINE_SIZE    1000
+
+// radio buffer configuration
 #define RADIO_TX_BUFSIZE 1024
 #define RADIO_RX_BUFSIZE 512
 
@@ -111,5 +117,8 @@
 #define ERR_4                 3
 #define ERR_SD_BUSY           -1
 #define OK                    123
+
+#define I2CMUX_ADDR (0x70) 
+
 
 #endif

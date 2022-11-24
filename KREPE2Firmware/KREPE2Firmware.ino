@@ -10,7 +10,7 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_I2CRegister.h>
 #include <Adafruit_MPL3115A2.h>
-#include <Adafruit_BNO055.h>
+#include <Adafruit_BNO08x.h>
 #include <Adafruit_MCP9600.h>
 #include <ArduinoNmeaParser.h>
 #include <FreeRTOS_SAMD51.h>
@@ -23,24 +23,17 @@
 #include <Servo.h>
 #include "wiring_private.h"
 
-#include "H3LIS100.h"      // high g accel driver
-#include "delay_helpers.h" // rtos delay helpers
-#include "config.h"        // project wide defs
-#include "packet.h"        // packet definitions
-#include "commands.h"      // command spec
-#include "pins.h"          // system pinouts
-#include "serial_headers.h" // Headers for serial print
-#include "brieflz.h"
+#include "src/H3LIS100.h"      // high g accel driver
+#include "src/delay_helpers.h" // rtos delay helpers
+#include "src/config.h"        // project wide defs
+#include "src/packet.h"        // packet definitions
+#include "src/commands.h"      // command definitions
+#include "pins.h"              // flight computer pinouts
+#include "src/serial_headers.h" // Headers for serial print
+#include "src/brieflz.h"
 
-#define I2CMUX_ADDR (0x70) 
 
-/* Serial 2
- The GPIO on the SAMD processor support multipler serial protocols
- on various compbinations of pins for more flexibility
- this configures pin 13 as RX and 12 as TX of SERCOM3 in hardware.
- These handlers then in turn trigger the handler for the Serial2 object
- in Arduino
-*/
+// Serial 2
 Uart Serial2( &sercom3, 13, 12, SERCOM_RX_PAD_1, UART_TX_PAD_0 ) ;
 void SERCOM3_0_Handler()
 {
@@ -116,7 +109,7 @@ Adafruit_MCP9600 mcps[6];
 const uint8_t MCP_ADDRS[6] = {0x60, 0x61, 0x62, 0x63, 0x64, 0x67};
 
 // freertos task handles
-TaskHandle_t Handle_compTask; // compression task handle
+TaskHandle_t Handle_packetBuildTask; // packet building task
 TaskHandle_t Handle_tcTask; // data receive from TPM subsystem task
 TaskHandle_t Handle_logTask; // sd card logging task
 TaskHandle_t Handle_gpsTask; // gps data receive task
@@ -126,6 +119,7 @@ TaskHandle_t Handle_prsTask; // barometric sensor task
 TaskHandle_t Handle_radTask; // telem radio task handle
 TaskHandle_t Handle_monitorTask; // debug running task stats over uart task
 TaskHandle_t Handle_bsmsTask; // battery and spectrometer measurement (BSMS) task
+TaskHandle_t Handle_piTask;  // nanoPi data sending task
 
 // freeRTOS semaphores
 SemaphoreHandle_t dbSem; // serial debug logging (Serial)
@@ -136,8 +130,23 @@ SemaphoreHandle_t depSem; // deployment status protector
 SemaphoreHandle_t irbSem; // iridium buffer protector
 SemaphoreHandle_t sigSem; // iridium signal quality protector
 SemaphoreHandle_t wbufSem; // SD buffer write semaphore
-SemaphoreHandle_t ledSem; // neopixel sepaphore
+SemaphoreHandle_t ledSem; // neopixel semaphore
 SemaphoreHandle_t sdSem; // sd card access
+SemaphoreHandle_t piBufSem; // access to the pi send buffer
+
+
+// buffers for the pi thread, containing recently created data to be sent to the Pi
+#define PIBUF1 0
+#define PIBUF2 1
+static uint8_t  ptxBuf1[PI_BUFFER_LINES][PI_LINE_SIZE];
+static uint8_t  ptxBuf2[PI_BUFFER_LINES][PI_LINE_SIZE];
+static uint8_t  ptxBuf1Size = 0;
+static uint8_t  ptxBuf2Size = 0;
+static uint16_t ptxBuf1LineSize[PI_BUFFER_LINES];
+static uint16_t ptxBuf2LineSize[PI_BUFFER_LINES];
+static uint8_t  ptxActiveBuf = PIBUF1;
+volatile bool   ptxBuf1Full = false;
+volatile bool   ptxBuf2Full = false;
 
 // receive and send buffers for iridium transmission
 uint8_t rbuf[RBUF_SIZE];
@@ -167,24 +176,21 @@ volatile bool packetReady = 0;
 int gPacketSize = 0;
 char gIrdBuf[SBD_TX_SZ];
 
-// for compression thread
-uint8_t c_buf[SBD_TX_SZ];      // Compressed buffer
-uint8_t prev_c_buf[SBD_TX_SZ]; // last compressed buffer if we exceed threshold
-uint8_t uc_buf[10*SBD_TX_SZ];  // Uncompressed buffer
-uint32_t workmem[(1UL << (BLZ_HASH_BITS))]; // lookup table for compression
+// for packet compression thread
+uint8_t uc_buf[2*SBD_TX_SZ];  // Uncompressed buffer
 
 // log file name
 char filename[LOGFILE_NAME_LENGTH] = LOGFILE_NAME;
 
 // include here to things are already defined
-#include "sample_datfile.h"
+#include "src/sample_datfile.h"
 
 
 // GPS parser object
 ArduinoNmeaParser parser(onRmcUpdate, onGgaUpdate);
 
-// low g acc and gyro
-Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28);
+// low g IMU
+Adafruit_BNO08x bno08x(-1);
 
 Adafruit_NeoPixel led(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
@@ -223,15 +229,85 @@ static void BSMSThread(void *pvParameters)
   vTaskDelete( NULL );
 }
 
+// helper to write a packet of data to the logfile
+// ptype is a one byte id, where data holds size bytes of a struct
+int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
+  // get access to ptx buffers for writing
+  if ( xSemaphoreTake( piBufSem, ( TickType_t ) 50 ) == pdTRUE ) {
+    if( ptxActiveBuf == PIBUF1 ){
+
+      // write packet data as plain csv to an entry in the ptxBuf1 list
+      // incremennt ptxBuf1 entry size by 1
+      ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size++], ptype, data, size);
+
+      // check if ptxbuf1 is full, if so set full flag and change active buffer 
+      if( ptxBuf1Size >= PI_BUFFER_LINES ){
+        ptxActiveBuf = PIBUF2;
+        ptxBuf1Full = true;
+      }
+    } else if( ptxActiveBuf == PIBUF2 ){
+
+      // write packet data as plain csv to an entry in the ptxBuf12 list
+      // incremennt ptxBuf2 entry size by 1
+      ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size++], ptype, data, size );
+
+      // check if ptxbuf2 is full, if so set full flag and change active buffer 
+      if( ptxBuf2Size >= PI_BUFFER_LINES ){
+        ptxActiveBuf = PIBUF1;
+        ptxBuf2Full = true;
+      }
+    }
+    xSemaphoreGive( piBufSem );
+
+    // return success of writing packet to buffer
+    return 0;
+  } else {
+    // we did not get the semaphore and could not write to buffer
+    return 1;
+  }
+}
+
 // communicate with NeoPi for packet creation
 static void piThread(void *pvParameters)
 {
-  // TODO: receive data over UART from BSMS Serial1
+  // zero out tx lines and line sizes
+  int i;
+  for( i=0; i<PI_BUFFER_LINES; i++ ){
+    memset(ptxBuf1[i], 0, PI_LINE_SIZE);
+    memset(ptxBuf2[i], 0, PI_LINE_SIZE);
+    ptxBuf1LineSize[i] = 0;
+    ptxBuf2LineSize[i] = 0;
+  }
 
   while (1)
   {
-    // monitor the overflow buffer and send all that information over the pi serial so it can log it 
-    // and use it to build packets
+    // if there are no lines to send, check later
+    if( !ptxBuf1Full && !ptxBuf2Full ){
+      vTaskDelay(10);
+      continue;
+    } 
+
+    // else there are lines to send 
+    else {
+
+      // if buffer 1 is full, send all the lines that are queued
+      if( ptxBuf1Full ){
+        for( i=0; i<ptxBuf1Size; i++ ){
+          SERIAL_PI.write(ptxBuf1[i], ptxBuf1LineSize[i]);
+        }
+        ptxBuf1Size = 0;
+        ptxBuf1Full = false;
+      }
+      
+      // if buffer 2 is full, send all of its lines
+      if( ptxBuf2Full ){
+        for( i=0; i<ptxBuf2Size; i++ ){
+          SERIAL_PI.write(ptxBuf2[i], ptxBuf2LineSize[i]);
+        }
+        ptxBuf2Size = 0;
+        ptxBuf2Full = false;
+      }
+    }
 
     // send the magic byte to ask for a binary packet back to send, then place that in the iridium buffer. 
     
@@ -240,16 +316,23 @@ static void piThread(void *pvParameters)
   vTaskDelete( NULL );
 }
 
+// dispacth received commands over radio to various system threads
+// only for ground operations, the debug radio is not for use during the actual mission
+void dispatchCommand(cmd_t command)
+{
+
+}
+
 
 // radio thread
 // in charge of the RFM69 debug radio 
 // sending packets out as telemetry and receiving commands and 
 // dispatching them to other threads
 // see node demo sketch for reference: https://github.com/LowPowerLab/RFM69/blob/master/Examples/Node/Node.ino
-
 static void radThread(void *pvParameters)
 {
   bool initOk = true;
+  cmd_t inCmd;
   
   radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
@@ -268,6 +351,7 @@ static void radThread(void *pvParameters)
       {
         if( (radioRxBufSize + radio.DATALEN) < RADIO_RX_BUFSIZE) {
           memcpy(radioRxBuf, radio.DATA, radio.DATALEN);
+          radioRxBufSize += radio.DATALEN;
 
           #ifdef DEBUG_RADIO
           if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -298,8 +382,65 @@ static void radThread(void *pvParameters)
       xSemaphoreGive( sdSem );
     } // end sd access
 
-    // now check if we have any packets in the TX buffer.
+    // interpret received data, if any
+    // since max reception size is 60 bytes and we parse it right after we 
+    // receive it, precautions would have to be taken to received payloads
+    // larger than 60 bytes
+    // this approach assumes all commands are less than 60 bytes and also 
+    // that the first byte of the rx buffer is always a packet ID byte
+    if( radioRxBufSize > 0 ){
+      
+      #ifdef DEBUG_RADIO
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        Serial.print("RADIO: got ");
+        Serial.print(radioRxBufferSize);
+        Serial.println("bytes");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
 
+      // parse the buffer
+      // control capsule functionality based on command packets
+      // or other functionality...
+      bool goon = true;
+      int radrxbufidx = 0;
+      while( goon ){
+        switch( radioRxBuf[radrxbufidx] ){
+          case PTYPE_CMD:
+            if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx)){
+              // short read, ditch it
+              // TODO: handle this better
+              radrxbufidx = radioRxBufSize;
+              #ifdef DEBUG_RADIO
+              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+                Serial.println("RADIO:  less data in the radio buffer than expected");
+                xSemaphoreGive( dbSem );
+              }
+              #endif
+            } else {
+              memcpy(&inCmd, &radioRxBuf[radrxbufidx], sizeof(cmd_t));
+              radrxbufidx += sizeof(cmd_t);
+              dispatchCommand(inCmd);
+            }
+            break;
+          default:
+            #ifdef DEBUG_RADIO
+              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+                Serial.println("RADIO:  received unknown command byte: ");
+                Serial.print(radioRxBuf[radrxbufidx], HEX);
+                xSemaphoreGive( dbSem );
+              }
+              #endif
+            break;
+        }
+        if( radrxbufidx == radioRxBufSize ){
+          goon = false;
+        }
+      }
+
+    }
+
+    // now check if we have any packets in the TX buffer.
     // if there are packets of data in the Tx buffer 
     // the get the sd semaphore and try to send all that are in there
     // sending with retry can take time, so put the spi access semaphore inside the send loop
@@ -318,20 +459,40 @@ static void radThread(void *pvParameters)
           if( (radioTxBufSize - txBufPos) > 60 ){
             if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], 60 )){
               // success
-              //Serial.print(" ok!");
+              #ifdef DEBUG_RADIO
+              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+                Serial.print(" ok!");
+                xSemaphoreGive( dbSem );
+              }
+              #endif
               txBufPos += 60;
             } else {
-              // sending failed
-              Serial.print(" nothing...");
+              // sending failed 
+              #ifdef DEBUG_RADIO
+              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+                Serial.print(" nothing..."); 
+                xSemaphoreGive( dbSem );
+              }
+              #endif
             }
           } else { // else if there is 60 or less bytes in the send buffer, just send what is there
             if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], (radioTxBufSize - txBufPos) )){
               // send success
-              //Serial.print(" ok!");
+              #ifdef DEBUG_RADIO
+              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+                Serial.print(" ok!");
+                xSemaphoreGive( dbSem );
+              }
+              #endif
               txBufPos += (radioTxBufSize - txBufPos);
             } else {
               // sending failed 
-              Serial.print(" nothing..."); 
+              #ifdef DEBUG_RADIO
+              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+                Serial.print(" nothing..."); 
+                xSemaphoreGive( dbSem );
+              }
+              #endif          
             }
           }
 
@@ -399,6 +560,9 @@ void onRmcUpdate(nmea::RmcData const rmc)
 
   // try to write the gps rmc data to the SD log buffer
   while( writeToLogBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
+
+  // try to write to pi output buffer
+  while( writeToPtxBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
 }
 
 // helper to print RMC messages to a stream
@@ -490,7 +654,6 @@ void onGgaUpdate(nmea::GgaData const gga)
   //}
   #endif
 
-  // TODO: write data to log buffer
   data.t = xTaskGetTickCount();
   data.time[0] = (uint16_t)gga.time_utc.hour;
   data.time[1] = (uint16_t)gga.time_utc.minute;
@@ -503,6 +666,9 @@ void onGgaUpdate(nmea::GgaData const gga)
 
   // try to write the gps gga data to the SD log buffer
   while( writeToLogBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
+
+  // try to write to pi output buffer
+  while( writeToPtxBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
 }
 
 // thread safe copy of src boolean to dest boolean.
@@ -595,13 +761,14 @@ static void gpsThread( void *pvParameters )
 */
 static void imuThread( void *pvParameters )
 {
-  bool bno_ok = false, highg_ok = false;
-  imu::Vector<3> rawAcc;
-  imu::Vector<3> rawGyr;
-  sensors_event_t event;
+  bool bno_ok = false, highg_ok = false, 
+       bno_accel_init = false, bno_gyro_init = false;
+  sensors_event_t h3event; // struct to hold high g accel data
+  sh2_SensorValue_t bnoValue; // struct to hold low g imu data
   acc_t accData;
   imu_t imuData;
-  // TODO: implement
+  // TODO: implement absolute orientation logging
+
   // unsigned long sample_period_ms = 20;
   unsigned long last_sample_time = 0;
 
@@ -615,14 +782,23 @@ static void imuThread( void *pvParameters )
 
   if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
     // init BNO055 IMU
-    if( bno.begin() ) {
+    // Try to initialize!
+    if (bno08x.begin_I2C()) {
       bno_ok = true;
-
-      // now configure the bno to be +/-16g (4g is default)
-      // gyr setting of +/-2000 dps is default
-      //bno.setAccFSR(Adafruit_BNO055::ACC_FSR_16G);
     }
 
+    if (bno08x.enableReport(SH2_RAW_ACCELEROMETER)) {
+      //Serial.println("Could not enable raw accelerometer");
+      bno_accel_init = true;
+    }
+    if (!bno08x.enableReport(SH2_RAW_GYROSCOPE)) {
+      //Serial.println("Could not enable raw gyroscope");
+      bno_gyro_init = true;
+    }
+    // if (!bno08x.enableReport(SH2_RAW_MAGNETOMETER)) {
+    //   Serial.println("Could not enable raw magnetometer");
+    // }
+   
     // init H3LIS100 accelerometer
     if( highg.begin() ){
       highg_ok = true;
@@ -635,6 +811,10 @@ static void imuThread( void *pvParameters )
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
     Serial.print("IMU: init BNO: ");
     Serial.print(bno_ok);
+    Serial.print(", BNO accel init: ");
+    Serial.print(bno_accel_init);
+    Serial.print(", BNO gyro init: ");
+    Serial.print(bno_gyro_init);
     Serial.print(", init H3LIS: ");
     Serial.println(highg_ok);
     xSemaphoreGive( dbSem );
@@ -647,32 +827,45 @@ static void imuThread( void *pvParameters )
     // try to acquire lock on i2c bus and take measurements
     // from the IMU and high g accelerometer
     if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
-      // get low g acceleration and gyro measurements
-      rawAcc = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
-      rawGyr = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
+      
+      // if (bno08x.wasReset()) {
+      //   Serial.print("sensor was reset ");
+      //   setReports();
+      // }
 
       // get high g accel measurements
-      highg.getEvent(&event);
+      highg.getEvent(&h3event);
+
+
+      // if (!bno08x.getSensorEvent(&sensorValue)) {
+      //   continue;
+      // }
+
+      bno08x.getSensorEvent(&bnoValue);
 
       xSemaphoreGive( i2c1Sem );
+    }
+
+    switch (bnoValue.sensorId) {
+      case SH2_RAW_ACCELEROMETER:
+        imuData.data[0] = bnoValue.un.rawAccelerometer.x;
+        imuData.data[1] = bnoValue.un.rawAccelerometer.y;
+        imuData.data[2] = bnoValue.un.rawAccelerometer.z;
+        break;
+      case SH2_RAW_GYROSCOPE:
+        imuData.data[3] = bnoValue.un.rawGyroscope.x;
+        imuData.data[4] = bnoValue.un.rawGyroscope.y;
+        imuData.data[5] = bnoValue.un.rawGyroscope.z;
+        break;
     }
 
     last_sample_time = xTaskGetTickCount();
 
     // copy high g acc data (h3lis100) into logging structs
     accData.t = last_sample_time / TIME_SCALE;
-    accData.data[0] = event.acceleration.x * UNIT_SCALE;
-    accData.data[1] = event.acceleration.y * UNIT_SCALE;
-    accData.data[2] = event.acceleration.z * UNIT_SCALE;
-
-    // copy low g and gyro data (bno055 imu)
-    imuData.t = last_sample_time / TIME_SCALE;
-    imuData.data[0] = rawAcc.x() * UNIT_SCALE;
-    imuData.data[1] = rawAcc.y() * UNIT_SCALE;
-    imuData.data[2] = rawAcc.z() * UNIT_SCALE;
-    imuData.data[3] = rawGyr.x() * UNIT_SCALE;
-    imuData.data[4] = rawGyr.y() * UNIT_SCALE;
-    imuData.data[5] = rawGyr.z() * UNIT_SCALE;
+    accData.data[0] = h3event.acceleration.x * UNIT_SCALE;
+    accData.data[1] = h3event.acceleration.y * UNIT_SCALE;
+    accData.data[2] = h3event.acceleration.z * UNIT_SCALE;
 
     // report sensor init status
     imuData.ok = 0;
@@ -683,30 +876,32 @@ static void imuThread( void *pvParameters )
     while( writeToLogBuf(PTYPE_IMU, &imuData, sizeof(imu_t)) > 0);
     while( writeToLogBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
 
-
+    // try to write these data to the pi buffer lines to be sent out over serial
+    while( writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t))> 0);
+    while( writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t))> 0);
 
     #ifdef DEBUG_IMU
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-      Serial.print("BNO055 aX: ");
-      Serial.print(rawAcc.x(), 4);
+      Serial.print("BNO088 aX: ");
+      Serial.print(imuData.data[0], 4);
       Serial.print("\taY: ");
-      Serial.print(rawAcc.y(), 4);
+      Serial.print(imuData.data[1], 4);
       Serial.print("\taZ: ");
-      Serial.println(rawAcc.z(), 4);
+      Serial.println(imuData.data[2], 4);
 
-      Serial.print("BNO055 gX: ");
-      Serial.print(rawGyr.x(), 4);
+      Serial.print("BNO088 gX: ");
+      Serial.print(imuData.data[3], 4);
       Serial.print("\tgY: ");
-      Serial.print(rawGyr.y(), 4);
+      Serial.print(imuData.data[4], 4);
       Serial.print("\tgZ: ");
-      Serial.println(rawGyr.z(), 4);
+      Serial.println(imuData.data[5], 4);
 
       Serial.print("H3LIS100 aX: ");
-      Serial.print(event.acceleration.x, 4);
+      Serial.print(accData.data[0], 4);
       Serial.print("\taY: ");
-      Serial.print(event.acceleration.y, 4);
+      Serial.print(accData.data[1], 4);
       Serial.print("\taZ: ");
-      Serial.println(event.acceleration.z, 4);
+      Serial.println(accData.data[2], 4);
 
       xSemaphoreGive( dbSem );
     }
@@ -784,7 +979,11 @@ static void prsThread( void *pvParameters )
       // try to write this data to the log buffer
       while( writeToLogBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
 
-      myDelayMs(1000);
+      // try to write to pi output buffer
+      while( writeToPtxBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
+
+      //myDelayMs(1000);
+
     } else {
       taskYIELD();
     }
@@ -1110,24 +1309,20 @@ void safeKick() {
   }
 }*/
 
-static void compressionThread( void * pvParameters )
+// thread to build packets very simply, no compression
+//  uniform samples of different data
+static void packetBuildThread( void * pvParameters )
 {
   int pack_size = 0;
   int input_size = 0;
   unsigned long actual_read;
-  int timesCompSame = 0, lastCompressSize = 0, lastGoodPackSize = 0, lastGoodInputSize = 0;
-  bool acceptShort = false;
   int temp = 0;
   int bytesRead = 0;
   packet_t packet;
-
   // choose based on expected size of packets you are sampling
   // and the assumption that compressing wont make the data bigger
   int packetsToSample = 1;
 
-  // packet types are powers of two so you can OR them together
-  // to get bit mask of packet types to sample
-  uint16_t ptypeToSample = 0;
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -1139,13 +1334,9 @@ static void compressionThread( void * pvParameters )
   myDelayMs(25000);
 
   while(1) {
-    pack_size = 0;
     input_size = 0;
     actual_read = 0;
     packetsToSample = 4; // start with 5, var gets incremented before first use
-    acceptShort = false; // have we gotten the same compression values multiple times in a row?
-    lastCompressSize = 0;
-    timesCompSame = 0;
     bytesRead = 0;
 
 
@@ -1168,149 +1359,65 @@ static void compressionThread( void * pvParameters )
 
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-      Serial.print("COMP: starting compression, input_size = ");
+      Serial.print("COMP: 2 gps packets are size: ");
       Serial.println(input_size);
       xSemaphoreGive( dbSem );
     }
     #endif
 
-    // keep sampling and compressing data until compressed data
-    // is larger than 338 bytes
-    while(pack_size < (SBD_TX_SZ - 2) && !acceptShort ){
+    // not using compression, just fill with a predetermined structure
 
-      lastGoodInputSize = input_size + bytesRead;
+    // sample the datfile, requesting packetsToSample samples of type TC data
+    if( (temp = sample_datfile(PTYPE_TC,   packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+      bytesRead += temp;
 
-      bytesRead = 0;
-      packetsToSample++;
+    // sample some IMU data, placing it in the uc buffer after the previous reading
+    if( (temp = sample_datfile(PTYPE_IMU,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+      bytesRead += temp;
 
-//      #ifdef DEBUG
-//      if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-//        Serial.print("calling sample_datfile(), asking for ");
-//        Serial.print(packetsToSample);
-//        Serial.println(" packets.");
-//        xSemaphoreGive( dbSem );
-//      }
-//      #endif
+    // sample some ACC data
+    if( (temp = sample_datfile(PTYPE_ACC,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+      bytesRead += temp;
 
-      // sample the datfile, requesting packetsToSample samples of type TC data
-      if( (temp = sample_datfile(PTYPE_TC,   packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
-        bytesRead += temp;
+    // sample some spectro data
+    if( (temp = sample_datfile(PTYPE_SPEC, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+      bytesRead += temp;
 
-      // sample some IMU data, placing it in the uc buffer after the previous reading
-      if( (temp = sample_datfile(PTYPE_IMU,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
-        bytesRead += temp;
-
-      // sample some ACC data
-      if( (temp = sample_datfile(PTYPE_ACC,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
-        bytesRead += temp;
-
-      // sample some spectro data
-      if( (temp = sample_datfile(PTYPE_SPEC, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
-        bytesRead += temp;
-
-//      #ifdef DEBUG
-//      if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-//        Serial.print("Got ");
-//        Serial.print(bytesRead);
-//        Serial.println(" bytes back in buffer, compressing...");
-//        xSemaphoreGive( dbSem );
-//      }
-//      #endif
-
-//      if( bytesRead == ERR_SD_BUSY ){
-//        #ifdef DEBUG
-//        if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-//          Serial.println(" ERR SD BUSY");
-//          xSemaphoreGive( dbSem );
-//        }
-//        #endif
-
-//        break;
-//      }
-
-      // compress the contents of uc_buf and place them into memory starting at
-      // c_buf+2 address, the number of bytes in the input is bytesRead, according to
-      // the return value of the sample_datfile() function
-
-      // keep last run in case this one exceeds
-      lastGoodPackSize = pack_size;
-      memcpy(prev_c_buf, c_buf, SBD_TX_SZ);
-
-      //taskENTER_CRITICAL();
-      pack_size = blz_pack(uc_buf, c_buf+2, bytesRead + input_size, workmem);
-      //taskEXIT_CRITICAL();
-
-
-      #ifdef DEBUG
-      if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-        Serial.print(bytesRead+input_size);
-        Serial.print(" compressed (");
-        Serial.print(packetsToSample);
-        Serial.print(") down to ");
-        Serial.print(pack_size);
-        Serial.println(" bytes.");
-        xSemaphoreGive( dbSem );
-      }
-      #endif
-
-      if ( lastCompressSize == 0 ){
-        lastCompressSize = pack_size;
-      } else {
-        if( pack_size == lastCompressSize ) {
-          timesCompSame++;
-        } else {
-          lastCompressSize = pack_size;
-          timesCompSame = 0;
-        }
-        if( timesCompSame > 5 ) acceptShort = true;
-      }
-
-      //myDelayMs(5); // wait 5ms between compression runs
-    }
-
-    // put it in reverse turry, use previous data
-    if( pack_size > (SBD_TX_SZ - 2) ){
-      pack_size = lastGoodPackSize;
-      memcpy(c_buf, prev_c_buf, SBD_TX_SZ);
-      // fill in size of compressed buffer into the first 2 bytes
-      *(uint16_t*)(&c_buf[0]) = (uint16_t)(lastGoodInputSize);
-    } else {
-      // this was a short read, use most recent pack size and buffer
-      // fill in size of compressed buffer into the first 2 bytes
-      *(uint16_t*)(&c_buf[0]) = (uint16_t)(bytesRead + input_size);
-    }
+    // overall size in bytes of our data packet, uncompressed
+    input_size = bytesRead;
 
     // copy into packet structure
+    // just copy the uncompressed data into the packet structure
+    // in practice, we see very little compression with the
+    // limited RAM on microcontrollers, combined with the fact that the data is already binary 
+    // with little repetition in the data
     packet.t = xTaskGetTickCount();
-    packet.size = pack_size+2;
+    packet.size = input_size;
     memset(packet.data, 0, SBD_TX_SZ);
-    memcpy(packet.data, c_buf, pack_size+2);
+    memcpy(packet.data, uc_buf, input_size);
 
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-      Serial.print("COMP: ready to send. Compressed ");
-      Serial.print(*(uint16_t*)(&c_buf[0]));
-      Serial.print(" bytes (");
-      Serial.print(acceptShort ? packetsToSample : (packetsToSample-1) );
-      Serial.print(" packets) down to  ");
-      Serial.print(pack_size+2);
+      Serial.print("COMP: made an uncompressed packet size:  ");
+      Serial.print(input_size);
       Serial.println(" bytes.");
       xSemaphoreGive( dbSem );
     }
     #endif
 
-    // if there is not already data in it, copy this compressed packet
+    // if there is not already data in it, copy this packet
     // to the global iridium buffer to be sent asap
     if ( xSemaphoreTake( irbSem, ( TickType_t ) 10 ) == pdTRUE ) {
       if( !packetReady ){
         packetReady = true;
-        memcpy(gIrdBuf, c_buf, pack_size+2);
-        gPacketSize = pack_size+2;
+        memcpy(gIrdBuf, uc_buf, input_size);
+        gPacketSize = input_size;
       }
       xSemaphoreGive( irbSem );
     }
 
     // try to write this data to the log buffer
+    // TODO: don't try forever
     while( writeToLogBuf(PTYPE_PACKET, &packet, sizeof(packet_t)) > 0);
 
     // build a packet periodically
@@ -1377,6 +1484,9 @@ static void tcThread( void *pvParameters )
 
       // try to write this data to the log buffer
       while( writeToLogBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+
+      // try to write this data to the pi buff 
+      while( writeToPtxBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
       
     }
 
@@ -1794,7 +1904,8 @@ void setup() {
   xTaskCreate(prsThread,  "Pressure Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  xTaskCreate(compressionThread, "Data Compression", 512, NULL, tskIDLE_PRIORITY, &Handle_compTask);
+  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
+  xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   xTaskCreate(radThread, "Telem radio", 512, NULL, tskIDLE_PRIORITY, &Handle_radTask);
   
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);

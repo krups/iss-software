@@ -11,9 +11,18 @@
 #define PTYPE_TC   5
 #define PTYPE_PRS  6
 #define PTYPE_SPEC 7
-#define PTYPE_BAR  22
+#define PTYPE_BAR  10
+#define PTYPE_CMD  16
 #define PTYPE_PACKET 99 // compressed packet written to logfile
 
+// type PTYPE_CMD
+struct cmd_t {
+  uint8_t cmdid;
+  uint8_t args;
+  uint8_t data[4];
+};
+
+// type PTYPE_PACKET
 struct packet_t {
   uint16_t t;    // in seconds
   uint16_t size; // actual data in packet
@@ -115,5 +124,71 @@ struct rxtlm_t {
   int rssi;
   int snr;
 };
+
+
+// helper to format binary data as CSV strings for printing
+// needed to send data to pi.
+// this needs to be manually updated if packet structure changes in packet.h
+int writePacketAsPlaintext(char *dest, uint8_t ptype, void* data, size_t size) {
+  int ret = -1;
+
+  switch( ptype ) {
+    case PTYPE_ACC:
+      ret = sprintf(dest, 
+                  "ACC: %d, %d, %d, %d\n", 
+                  ((acc_t*)data)->t, 
+                  ((acc_t*)data)->data[0], 
+                  ((acc_t*)data)->data[1], 
+                  ((acc_t*)data)->data[2]);
+      break;
+
+    case PTYPE_PRS:
+      ret = sprintf(dest,
+                  "PRS: %d, %d, %d, %d, %d, %d\n", 
+                  ((prs_t*)data)->t, 
+                  ((prs_t*)data)->data[0], 
+                  ((prs_t*)data)->data[1], 
+                  ((prs_t*)data)->data[2],
+                  ((prs_t*)data)->data[3],
+                  ((prs_t*)data)->data[4]);
+      break;
+
+    case PTYPE_TC:
+      ret = sprintf(dest,
+                  "TC: %d, %d, %d, %d, %d, %d\n", 
+                  ((tc_t*)data)->t, 
+                  ((tc_t*)data)->data[0], 
+                  ((tc_t*)data)->data[1], 
+                  ((tc_t*)data)->data[2],
+                  ((tc_t*)data)->data[3],
+                  ((tc_t*)data)->data[4],
+                  ((tc_t*)data)->data[5]);
+      break;
+
+    case PTYPE_IMU:
+      ret = sprintf(dest,
+                  "IMU: %d, %d, %d, %d, %d, %d\n", 
+                  ((imu_t*)data)->t, 
+                  ((imu_t*)data)->data[0], 
+                  ((imu_t*)data)->data[1], 
+                  ((imu_t*)data)->data[2],
+                  ((imu_t*)data)->data[3],
+                  ((imu_t*)data)->data[4],
+                  ((imu_t*)data)->data[5]);
+      break;
+    
+    case PTYPE_RMC:
+      break;
+
+    case PTYPE_GGA:
+      break;
+    
+    default:
+      break;
+  }
+
+  // return number of bytes written to buffer
+  return ret;
+}
 
 #endif
