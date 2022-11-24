@@ -15,11 +15,13 @@
 #define PTYPE_CMD  16
 #define PTYPE_PACKET 99 // compressed packet written to logfile
 
+#define MAX_CMD_ARGS 10
+
 // type PTYPE_CMD
 struct cmd_t {
   uint8_t cmdid;
-  uint8_t args;
-  uint8_t data[4];
+  uint8_t argc;
+  uint8_t argv[MAX_CMD_ARGS];
 };
 
 // type PTYPE_PACKET
@@ -189,6 +191,11 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, void* data, size_t size) {
 
   // return number of bytes written to buffer
   return ret;
+}
+
+int writePacketAsJson() {
+
+  return 0;
 }
 
 #endif

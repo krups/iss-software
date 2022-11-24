@@ -15,6 +15,7 @@
 #include <ArduinoNmeaParser.h>
 #include <FreeRTOS_SAMD51.h>
 #include <Honeywell_ABP.h>
+#include <ArduinoJson.h>
 #include <IridiumSBD.h>
 #include <semphr.h>
 #include <SD.h>
@@ -318,8 +319,18 @@ static void piThread(void *pvParameters)
 
 // dispacth received commands over radio to various system threads
 // only for ground operations, the debug radio is not for use during the actual mission
-void dispatchCommand(cmd_t command)
-{
+void dispatchCommand(int senderId, cmd_t command)
+{ 
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    PC_SERIAL.print("Got command from address [");
+    PC_SERIAL.print(senderId, HEX);
+    PC_SERIAL.print("], of value [");
+    PC_SERIAL.print(command.cmdid);
+    PC_SERIAL.println("]");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
 
 }
 
@@ -331,8 +342,8 @@ void dispatchCommand(cmd_t command)
 // see node demo sketch for reference: https://github.com/LowPowerLab/RFM69/blob/master/Examples/Node/Node.ino
 static void radThread(void *pvParameters)
 {
-  bool initOk = true;
   cmd_t inCmd;
+  int fromNode = -1;
   
   radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
@@ -349,6 +360,8 @@ static void radThread(void *pvParameters)
       // check for any received packets, but only if they will fit in our RX buffer
       if (radio.receiveDone())
       {
+        fromNode = radio.SENDERID;
+
         if( (radioRxBufSize + radio.DATALEN) < RADIO_RX_BUFSIZE) {
           memcpy(radioRxBuf, radio.DATA, radio.DATALEN);
           radioRxBufSize += radio.DATALEN;
@@ -420,17 +433,17 @@ static void radThread(void *pvParameters)
             } else {
               memcpy(&inCmd, &radioRxBuf[radrxbufidx], sizeof(cmd_t));
               radrxbufidx += sizeof(cmd_t);
-              dispatchCommand(inCmd);
+              dispatchCommand(fromNode, radioinCmd);
             }
             break;
           default:
             #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.println("RADIO:  received unknown command byte: ");
-                Serial.print(radioRxBuf[radrxbufidx], HEX);
-                xSemaphoreGive( dbSem );
-              }
-              #endif
+            if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+              Serial.println("RADIO:  received unknown command byte: ");
+              Serial.print(radioRxBuf[radrxbufidx], HEX);
+              xSemaphoreGive( dbSem );
+            }
+            #endif
             break;
         }
         if( radrxbufidx == radioRxBufSize ){
