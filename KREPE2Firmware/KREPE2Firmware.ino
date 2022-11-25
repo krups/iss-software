@@ -127,7 +127,7 @@ SemaphoreHandle_t dbSem; // serial debug logging (Serial)
 SemaphoreHandle_t i2c1Sem; // i2c port access semaphore
 SemaphoreHandle_t gpsSerSem; // gps serial port acces
 SemaphoreHandle_t irdSerSem; // iridium serial semaphore
-SemaphoreHandle_t depSem; // deployment status protector
+SemaphoreHandle_t radBufSem; // radio buffer access
 SemaphoreHandle_t irbSem; // iridium buffer protector
 SemaphoreHandle_t sigSem; // iridium signal quality protector
 SemaphoreHandle_t wbufSem; // SD buffer write semaphore
@@ -157,10 +157,12 @@ char sbuf[SBUF_SIZE];
 // variables for the debug radio
 static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
 static uint16_t radioTxBufSize = 0;
+static uint8_t radioTxBuf2[RADIO_TX_BUFSIZE]; // copy of buffer for the radio to read from 
+static uint16_t radioTxBufSize2 = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
 static uint16_t radioRxBufSize = 0;
 #ifdef USE_DEBUG_RADIO
-RFM69 radio; // debug radio object
+RFM69 radio(PIN_RADIO_SS, -1, true, &SPI); // debug radio object
 #endif
 
 // variables for the ping pong loging buffers
@@ -229,6 +231,40 @@ static void BSMSThread(void *pvParameters)
   }
 
   vTaskDelete( NULL );
+}
+
+// helper to write a packet of data to the radio tx buffer
+int writeToRadBuf(uint8_t ptype, void* data, size_t size) {
+  bool overflow = false;
+
+  if ( xSemaphoreTake( radBufSem, ( TickType_t ) 100 ) == pdTRUE ) {
+
+    if( radioTxBufSize + size + 1 >= RADIO_TX_BUFSIZE ){
+      overflow = true;
+    } else {
+      // copy data into the radio tx buffer for sending
+      radioTxBuf[radioTxBufSize++] = ptype;
+      memcpy(&radioTxBuf[radioTxBufSize], data, size);
+      radioTxBufSize += size;
+    }
+
+    xSemaphoreGive( radBufSem );
+
+    if( overflow ){
+      #ifdef DEBUG_RADIO
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        Serial.println("radio tx buffer overflow");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
+      return 1;
+    }
+
+    return 0;
+  } else {
+    return 1;
+  }
+
 }
 
 // helper to write a packet of data to the logfile
@@ -324,15 +360,16 @@ void dispatchCommand(int senderId, cmd_t command)
 { 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-    PC_SERIAL.print("Got command from address [");
-    PC_SERIAL.print(senderId, HEX);
-    PC_SERIAL.print("], of value [");
-    PC_SERIAL.print(command.cmdid);
-    PC_SERIAL.println("]");
+    SERIAL.print("Got command from address [");
+    SERIAL.print(senderId, HEX);
+    SERIAL.print("], of value [");
+    SERIAL.print(command.cmdid);
+    SERIAL.println("]");
     xSemaphoreGive( dbSem );
   }
   #endif
 
+  
 }
 
 
@@ -345,6 +382,7 @@ static void radThread(void *pvParameters)
 {
   cmd_t inCmd;
   int fromNode = -1;
+  bool sendOkay = false;
   
   radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
@@ -434,7 +472,7 @@ static void radThread(void *pvParameters)
             } else {
               memcpy(&inCmd, &radioRxBuf[radrxbufidx], sizeof(cmd_t));
               radrxbufidx += sizeof(cmd_t);
-              dispatchCommand(fromNode, radioinCmd);
+              dispatchCommand(fromNode, inCmd);
             }
             break;
           default:
@@ -455,68 +493,71 @@ static void radThread(void *pvParameters)
     }
 
     // now check if we have any packets in the TX buffer.
+    // copy to our local buffer
+    if( xSemaphoreTake( radBufSem, (TickType_t) 100 ) == pdTRUE ){
+      if( radioTxBufSize > 0 ){
+        radioTxBufSize2 = radioTxBufSize;
+        memcpy(radioTxBuf2, radioTxBuf, radioTxBufSize);
+        radioTxBufSize = 0;
+      }
+      xSemaphoreGive( radBufSem );
+    }
     // if there are packets of data in the Tx buffer 
     // the get the sd semaphore and try to send all that are in there
     // sending with retry can take time, so put the spi access semaphore inside the send loop
     txBufPos = 0;
     // need to get access to send buffer and SD buffer
-    if( radioTxBufSize > 0 ){
+    if( radioTxBufSize2 > 0 ){
       
       // we can only send 60 bytes at a time, so look through the buffer and send as much as possible 
       // at once until the buffer is empty
-      while (radioTxBufSize - txBufPos > 0)
+      sendOkay = true;
+      while (radioTxBufSize2 - txBufPos > 0)
       {
         // first get access to SPI bus
         if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-
           // if there is more than 60 bytes in the send buffer, send 60 of it over and over
-          if( (radioTxBufSize - txBufPos) > 60 ){
-            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], 60 )){
+          if( (radioTxBufSize2 - txBufPos) > 60 ){
+            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60 )){
               // success
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" ok!");
-                xSemaphoreGive( dbSem );
-              }
-              #endif
+              sendOkay &= true;
               txBufPos += 60;
             } else {
               // sending failed 
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" nothing..."); 
-                xSemaphoreGive( dbSem );
-              }
-              #endif
+              sendOkay &= false;
+
             }
           } else { // else if there is 60 or less bytes in the send buffer, just send what is there
-            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], (radioTxBufSize - txBufPos) )){
+            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], (radioTxBufSize2 - txBufPos) )){
               // send success
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" ok!");
-                xSemaphoreGive( dbSem );
-              }
-              #endif
-              txBufPos += (radioTxBufSize - txBufPos);
+              sendOkay &= true;
+              txBufPos += (radioTxBufSize2 - txBufPos);
             } else {
-              // sending failed 
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" nothing..."); 
-                xSemaphoreGive( dbSem );
-              }
-              #endif          
+              // sending failed
+              sendOkay &= false;    
             }
           }
-
-          
-
           xSemaphoreGive( sdSem );
         } // end access to the SPI bus
       }
 
-      radioTxBufSize = 0;
+      if( sendOkay ){
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.println(" debug radio send ok");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      } else {
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.print(" debug radio send fail"); 
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      }
+
+      radioTxBufSize2 = 0;
     } // end if radioTxBufSize > 0
   }
 
@@ -577,6 +618,9 @@ void onRmcUpdate(nmea::RmcData const rmc)
 
   // try to write to pi output buffer
   while( writeToPtxBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
+
+  // try to write to radio debug buffer
+  while( writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
 }
 
 // helper to print RMC messages to a stream
@@ -1867,10 +1911,10 @@ void setup() {
       xSemaphoreGive( ( irdSerSem ) );  // make available
   }
   // setup DEPLOYMENT bool protector
-  if ( depSem == NULL ) {
-    depSem = xSemaphoreCreateMutex();  // create mutex
-    if ( ( depSem ) != NULL )
-      xSemaphoreGive( ( depSem ) );  // make available
+  if ( radBufSem == NULL ) {
+    radBufSem = xSemaphoreCreateMutex();  // create mutex
+    if ( ( radBufSem ) != NULL )
+      xSemaphoreGive( ( radBufSem ) );  // make available
   }
   // setup iridium buffer protector
   if ( irbSem == NULL ) {

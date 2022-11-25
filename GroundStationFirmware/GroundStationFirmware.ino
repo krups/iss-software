@@ -29,7 +29,7 @@
 #include "src/config.h"        // project wide defs
 #include "src/packet.h"        // data packet defs
 #include "src/commands.h"      // command spec
-//#include "pins.h"                  // groundstation system pinouts
+#include "pins.h"                  // groundstation system pinouts
 
 #define PC_SERIAL Serial // PC connection to send plain text over
 
@@ -43,11 +43,12 @@ SemaphoreHandle_t spiSem; // semaphore for spi to radio
 SemaphoreHandle_t cmdSem; // semaphore to access the command structure we want to send over the radio
 
 // variables for the debug radio
+uint8_t targetNode = NODE_ADDRESS_TESTNODE;
 static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
 static uint16_t radioTxBufSize = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
 static uint16_t radioRxBufSize = 0;
-RFM69 radio; // debug radio object
+RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, &SPI); // debug radio object
 
 // for printing data to serial
 StaticJsonDocument<1024> doc;
@@ -60,6 +61,31 @@ char serial_command_buffer_[32]; // max received command length
 // parser object
 SerialCommands serial_commands_(&PC_SERIAL, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
 
+
+// serial command andler to set targe node address
+void cmd_set_target(SerialCommands* sender)
+{
+  //Note: Every call to Next moves the pointer to next parameter
+	char* targetNodeStr = sender->Next();
+	if (targetNodeStr == NULL) {
+    // if no arg supplied, set target node to TESTNODE
+		targetNode = NODE_ADDRESS_TESTNODE;
+		return;
+	}
+  
+  // set node address to TESTNODE if supplied argument is invalid
+	if (targetNode = atoi(targetNodeStr) == 0 ){
+    targetNode = NODE_ADDRESS_TESTNODE;
+  }
+
+  #ifdef DEBUG_SEND
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("setting target node to ");
+    sender->GetSerial()->println(targetNode);
+    xSemaphoreGive( dbSem );
+  }
+  #endif 
+}
 
 // serial command handler for initiating a send of the C02 paraachute deploy
 void cmd_build_packet(SerialCommands* sender)
@@ -80,7 +106,6 @@ void cmd_build_packet(SerialCommands* sender)
     newCmdToSend = true;
     xSemaphoreGive( cmdSem );
   }
-
 }
 
 // serial command handler for initiating a send of the pyro cutter firing
@@ -92,7 +117,6 @@ void cmd_send_packet(SerialCommands* sender)
     xSemaphoreGive( dbSem );
   }
   #endif
-
 
   // get semaphore access to command struct
   if ( xSemaphoreTake( cmdSem, ( TickType_t ) 500 ) == pdTRUE ) {
@@ -123,8 +147,10 @@ void cmd_help(SerialCommands* sender, const char* cmd)
   #endif
 }
 
-SerialCommand cmd_bp_("bp", cmd_build_packet); // deploy parachute command
-SerialCommand cmd_sp_("sp", cmd_send_packet); // fire pyro cutters command
+SerialCommand cmd_bp_("bp", cmd_build_packet); // build iridium packet
+SerialCommand cmd_sp_("sp", cmd_send_packet); // send iridium packet
+SerialCommand cmd_st_("target", cmd_send_packet); // set target
+
 
 // dispacth a command received from the capsule (if any, could be used as ACK / heartbeat)
 void dispatchCommand(int senderId, cmd_t command )
@@ -140,7 +166,6 @@ void dispatchCommand(int senderId, cmd_t command )
   }
   #endif
 }
-
 
 /// @brief radioThread interfaces with the RFM69HCW to communicate with the capsule
 /// @param param unused
@@ -271,7 +296,7 @@ void radioThread( void *param ){
 
           // if there is more than 60 bytes in the send buffer, send 60 of it over and over
           if( (radioTxBufSize - txBufPos) > 60 ){
-            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], 60 )){
+            if (radio.sendWithRetry(targetNode, &radioTxBuf[txBufPos], 60 )){
               // success
               #ifdef DEBUG_RADIO
               if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -290,7 +315,7 @@ void radioThread( void *param ){
               #endif
             }
           } else { // else if there is 60 or less bytes in the send buffer, just send what is there
-            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], (radioTxBufSize - txBufPos) )){
+            if (radio.sendWithRetry(targetNode, &radioTxBuf[txBufPos], (radioTxBufSize - txBufPos) )){
               // send success
               #ifdef DEBUG_RADIO
               if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -331,6 +356,7 @@ void serialThread( void *param ){
   serial_commands_.SetDefaultHandler(cmd_help);
   serial_commands_.AddCommand(&cmd_bp_);
   serial_commands_.AddCommand(&cmd_sp_);
+  serial_commands_.AddCommand(&cmd_st_);
   
   while (1) {
     serial_commands_.ReadSerial();
@@ -345,6 +371,14 @@ void setup() {
   PC_SERIAL.begin(115200);
   delay(10);
   
+
+  // manual reset on RFM69 radio, won't do anything if unpowered (3v32_ctrl pin)
+  pinMode(PIN_RADIO_RESET, OUTPUT);
+  digitalWrite(PIN_RADIO_RESET, HIGH);
+  delay(10);
+  digitalWrite(PIN_RADIO_RESET, LOW);
+  delay(10);
+
   delay(4000);
   
   #if DEBUG
