@@ -727,6 +727,9 @@ void onGgaUpdate(nmea::GgaData const gga)
 
   // try to write to pi output buffer
   while( writeToPtxBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
+
+  // try to write to radio debug buffer
+  while( writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
 }
 
 // thread safe copy of src boolean to dest boolean.
@@ -792,6 +795,8 @@ static void gpsThread( void *pvParameters )
   #endif
 
   while(1) {
+    // semaphore should not be needed since this is the only thread 
+    // accessing the hardware
     //if ( xSemaphoreTake( gpsSerSem, ( TickType_t ) 100 ) == pdTRUE ) {
       while (SERIAL_GPS.available()) {
         parser.encode((char)SERIAL_GPS.read());
@@ -938,6 +943,10 @@ static void imuThread( void *pvParameters )
     while( writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t))> 0);
     while( writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t))> 0);
 
+    // try to write to radio debug buffer
+    while( writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t)) > 0);
+    while( writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
+
     #ifdef DEBUG_IMU
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
       Serial.print("BNO088 aX: ");
@@ -972,8 +981,7 @@ static void imuThread( void *pvParameters )
 
 
 /**********************************************************************************
- * barometric pressure monitoring thread
- * 
+ * flushed air data sensings pressure monitoring thread
  * uses I2C mux to communicate with 5 honeywell ported pressure sensors
 */
 static void prsThread( void *pvParameters )
@@ -1039,6 +1047,9 @@ static void prsThread( void *pvParameters )
 
       // try to write to pi output buffer
       while( writeToPtxBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
+
+      // try to write to the radio send buffer
+      while( writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
 
       //myDelayMs(1000);
 
@@ -1545,6 +1556,9 @@ static void tcThread( void *pvParameters )
 
       // try to write this data to the pi buff 
       while( writeToPtxBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+
+      // try to put in the radio send buffer
+      while( writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
       
     }
 
@@ -1910,7 +1924,7 @@ void setup() {
     if ( ( irdSerSem ) != NULL )
       xSemaphoreGive( ( irdSerSem ) );  // make available
   }
-  // setup DEPLOYMENT bool protector
+  // setup radio tx buffer  protector
   if ( radBufSem == NULL ) {
     radBufSem = xSemaphoreCreateMutex();  // create mutex
     if ( ( radBufSem ) != NULL )
@@ -1977,7 +1991,6 @@ void setup() {
     SERIAL.println("Scheduler Failed! \n");
     delay(1000);
   }
-
 
 }
 

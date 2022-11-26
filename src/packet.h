@@ -13,6 +13,7 @@
 #define PTYPE_SPEC 7
 #define PTYPE_BAR  10
 #define PTYPE_CMD  16
+#define PTYPE_QUAT 17
 #define PTYPE_PACKET 99 // compressed packet written to logfile
 
 #define MAX_CMD_ARGS 10
@@ -31,6 +32,7 @@ struct packet_t {
   char data[SBD_TX_SZ];
 };
 
+// high g accel
 // type PTYPE_ACC
 struct acc_t {
   uint16_t t;      // in seconds
@@ -45,6 +47,15 @@ struct imu_t {
   uint16_t ok;
   int16_t data[6]; // in 10 * m/s/s and 10 * deg/s
 }; // 7 bytes
+
+// type PTYPE_QUAT
+struct quat_t {
+  uint16_t t; // in seconds
+  // if  ok & 0xF0 then high g accel booted
+  // if ok & 0x0F then imu booted
+  uint16_t ok;
+  float data[4]; // in 10 * m/s/s and 10 * deg/s
+}; // 20 bytes
 
 // type PTYPE_TMP
 struct tc_t {
