@@ -156,13 +156,14 @@ char sbuf[SBUF_SIZE];
 
 // variables for the debug radio
 static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
-static uint16_t radioTxBufSize = 0;
+volatile uint16_t radioTxBufSize = 0;
 static uint8_t radioTxBuf2[RADIO_TX_BUFSIZE]; // copy of buffer for the radio to read from 
-static uint16_t radioTxBufSize2 = 0;
+volatile uint16_t radioTxBufSize2 = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
-static uint16_t radioRxBufSize = 0;
+volatile uint16_t radioRxBufSize = 0;
+
 #ifdef USE_DEBUG_RADIO
-RFM69 radio(PIN_RADIO_SS, -1, true, &SPI); // debug radio object
+RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
 #endif
 
 // variables for the ping pong loging buffers
@@ -262,6 +263,12 @@ int writeToRadBuf(uint8_t ptype, void* data, size_t size) {
 
     return 0;
   } else {
+    #ifdef DEBUG_RADIO
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+      Serial.println("radio tx buffer overflow");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
     return 1;
   }
 
@@ -276,7 +283,7 @@ int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
 
       // write packet data as plain csv to an entry in the ptxBuf1 list
       // incremennt ptxBuf1 entry size by 1
-      ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size++], ptype, data, size);
+      ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size++], ptype, (uint8_t*)data, size);
 
       // check if ptxbuf1 is full, if so set full flag and change active buffer 
       if( ptxBuf1Size >= PI_BUFFER_LINES ){
@@ -287,7 +294,7 @@ int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
 
       // write packet data as plain csv to an entry in the ptxBuf12 list
       // incremennt ptxBuf2 entry size by 1
-      ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size++], ptype, data, size );
+      ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size++], ptype, (uint8_t*)data, size );
 
       // check if ptxbuf2 is full, if so set full flag and change active buffer 
       if( ptxBuf2Size >= PI_BUFFER_LINES ){
@@ -319,14 +326,15 @@ static void piThread(void *pvParameters)
 
   while (1)
   {
+    // check if we have been asked to send anything to the Pi
+
     // if there are no lines to send, check later
     if( !ptxBuf1Full && !ptxBuf2Full ){
-      vTaskDelay(10);
+      //vTaskDelay(10);
+      myDelayMs(10);
       continue;
-    } 
-
-    // else there are lines to send 
-    else {
+    } else {
+      // else there are lines to send 
 
       // if buffer 1 is full, send all the lines that are queued
       if( ptxBuf1Full ){
@@ -383,15 +391,56 @@ static void radThread(void *pvParameters)
   cmd_t inCmd;
   int fromNode = -1;
   bool sendOkay = false;
-  
-  radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
-  radio.setHighPower(); //must include this only for RFM69HW/HCW!
-  radio.encrypt(ENCRYPTKEY);
+
+  myDelayMs(1000);
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    SERIAL.println("RAD: Powering on Radio!");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  digitalWrite(PIN_3V32_CONTROL, HIGH);
+  myDelayMs(1000);
+
+  // manual reset on RFM69 radio, won't do anything if unpowered (3v32_ctrl pin)
+  pinMode(PIN_RADIO_RESET, OUTPUT);
+  digitalWrite(PIN_RADIO_RESET, HIGH);
+  myDelayMs(10);
+  digitalWrite(PIN_RADIO_RESET, LOW);
+  myDelayMs(100);
+
+  uint8_t temp = 0;
+
+  if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
+    radio.setHighPower(); //must include this only for RFM69HW/HCW!
+    radio.encrypt(ENCRYPTKEY);
+    temp = radio.readTemperature();
+    xSemaphoreGive( sdSem );
+  }
+
+  #ifdef DEBUG_RADIO
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    SERIAL.println("RAD: Initialized Radio!");
+    SERIAL.print("RAD: temperature is: ");
+    SERIAL.println(temp, DEC);
+    xSemaphoreGive( dbSem );
+  }
+  #endif
 
   int rxBufPos = 0;
   int txBufPos = 0;
 
   while( 1 ){
+
+    // #ifdef DEBUG_TICK
+    // if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    //   SERIAL.println("TICK RADIO");
+    //   xSemaphoreGive( dbSem );
+    // }
+    // #endif
 
     // first get access to SPI bus
     if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -445,7 +494,7 @@ static void radThread(void *pvParameters)
       #ifdef DEBUG_RADIO
       if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
         Serial.print("RADIO: got ");
-        Serial.print(radioRxBufferSize);
+        Serial.print(radioRxBufSize);
         Serial.println("bytes");
         xSemaphoreGive( dbSem );
       }
@@ -494,7 +543,7 @@ static void radThread(void *pvParameters)
 
     // now check if we have any packets in the TX buffer.
     // copy to our local buffer
-    if( xSemaphoreTake( radBufSem, (TickType_t) 100 ) == pdTRUE ){
+    if( xSemaphoreTake( radBufSem, (TickType_t) 1000 ) == pdTRUE ){
       if( radioTxBufSize > 0 ){
         radioTxBufSize2 = radioTxBufSize;
         memcpy(radioTxBuf2, radioTxBuf, radioTxBufSize);
@@ -509,32 +558,54 @@ static void radThread(void *pvParameters)
     // need to get access to send buffer and SD buffer
     if( radioTxBufSize2 > 0 ){
       
+      #ifdef DEBUG
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+        SERIAL.print("RAD: have data to send!");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
+
       // we can only send 60 bytes at a time, so look through the buffer and send as much as possible 
       // at once until the buffer is empty
       sendOkay = true;
-      while (radioTxBufSize2 - txBufPos > 0)
+      while ((radioTxBufSize2 - txBufPos) > 0)
       {
+
+        #ifdef DEBUG
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+          SERIAL.print("RAD: have ");
+          SERIAL.print(radioTxBufSize2);
+          SERIAL.print(" bytes to send...");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+
         // first get access to SPI bus
         if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
           // if there is more than 60 bytes in the send buffer, send 60 of it over and over
           if( (radioTxBufSize2 - txBufPos) > 60 ){
-            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60 )){
+            //radio.send((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60, true);
+            //txBufPos += 60;
+            if (radio.sendWithRetry((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60)){
               // success
               sendOkay &= true;
               txBufPos += 60;
             } else {
               // sending failed 
               sendOkay &= false;
-
+              txBufPos += 60;
             }
           } else { // else if there is 60 or less bytes in the send buffer, just send what is there
-            if (radio.sendWithRetry(NODE_ADDRESS_STATION, &radioTxBuf[txBufPos], (radioTxBufSize2 - txBufPos) )){
+            //radio.send((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], (uint8_t)(radioTxBufSize2 - txBufPos), true );
+            //txBufPos += (radioTxBufSize2 - txBufPos);
+            if (radio.sendWithRetry((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], (uint8_t)(radioTxBufSize2 - txBufPos) )){
               // send success
               sendOkay &= true;
               txBufPos += (radioTxBufSize2 - txBufPos);
             } else {
               // sending failed
               sendOkay &= false;    
+              txBufPos += (radioTxBufSize2 - txBufPos);
             }
           }
           xSemaphoreGive( sdSem );
@@ -543,14 +614,14 @@ static void radThread(void *pvParameters)
 
       if( sendOkay ){
         #ifdef DEBUG_RADIO
-        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
           Serial.println(" debug radio send ok");
           xSemaphoreGive( dbSem );
         }
         #endif
       } else {
         #ifdef DEBUG_RADIO
-        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
           Serial.print(" debug radio send fail"); 
           xSemaphoreGive( dbSem );
         }
@@ -559,6 +630,8 @@ static void radThread(void *pvParameters)
 
       radioTxBufSize2 = 0;
     } // end if radioTxBufSize > 0
+
+    myDelayMs(10);
   }
 
   vTaskDelete( NULL );
@@ -614,13 +687,14 @@ void onRmcUpdate(nmea::RmcData const rmc)
   data.course = rmc.course;
 
   // try to write the gps rmc data to the SD log buffer
-  while( writeToLogBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
+  writeToLogBuf(PTYPE_RMC, &data, sizeof(rmc_t));
 
   // try to write to pi output buffer
-  while( writeToPtxBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
+  writeToPtxBuf(PTYPE_RMC, &data, sizeof(rmc_t));
 
   // try to write to radio debug buffer
-  while( writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
+  //while( writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
+  writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t));
 }
 
 // helper to print RMC messages to a stream
@@ -723,13 +797,14 @@ void onGgaUpdate(nmea::GgaData const gga)
   data.alt = gga.altitude;
 
   // try to write the gps gga data to the SD log buffer
-  while( writeToLogBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
+  writeToLogBuf(PTYPE_GGA, &data, sizeof(gga_t));
 
   // try to write to pi output buffer
-  while( writeToPtxBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
+  writeToPtxBuf(PTYPE_GGA, &data, sizeof(gga_t));
 
   // try to write to radio debug buffer
-  while( writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
+  //while( writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
+  writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t));
 }
 
 // thread safe copy of src boolean to dest boolean.
@@ -794,6 +869,11 @@ static void gpsThread( void *pvParameters )
   }
   #endif
 
+  //vTaskDelay(15000);
+  myDelayMs(15000);
+
+  digitalWrite(PIN_GATE_IR, HIGH);
+
   while(1) {
     // semaphore should not be needed since this is the only thread 
     // accessing the hardware
@@ -804,7 +884,8 @@ static void gpsThread( void *pvParameters )
     //  xSemaphoreGive( gpsSerSem );
     //}
 
-      vTaskDelay(10);
+      //vTaskDelay(10);
+      myDelayMs(10);
   }
 
   vTaskDelete( NULL );
@@ -833,7 +914,20 @@ static void imuThread( void *pvParameters )
   // TODO: implement absolute orientation logging
 
   // unsigned long sample_period_ms = 20;
-  unsigned long last_sample_time = 0;
+  unsigned long last_sample_time = 0, lastlast_sample_time = 0;
+
+  accData.t = 0;
+  accData.data[0] = 0;
+  accData.data[1] = 0;
+  accData.data[2] = 0;
+
+  imuData.t = 0;
+  imuData.data[0] = 0;
+  imuData.data[1] = 0;
+  imuData.data[2] = 0;
+  imuData.data[3] = 0;
+  imuData.data[4] = 0;
+  imuData.data[5] = 0;
 
 
   #ifdef DEBUG
@@ -850,11 +944,15 @@ static void imuThread( void *pvParameters )
       bno_ok = true;
     }
 
-    if (bno08x.enableReport(SH2_RAW_ACCELEROMETER)) {
+    //bno08x.enableReport(SH2_ACCELEROMETER);
+    //bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED);
+    //bno08x.enableReport(SH2_GAME_ROTATION_VECTOR);
+
+    if (bno08x.enableReport(SH2_ACCELEROMETER)) {
       //Serial.println("Could not enable raw accelerometer");
       bno_accel_init = true;
     }
-    if (!bno08x.enableReport(SH2_RAW_GYROSCOPE)) {
+    if (bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED)) {
       //Serial.println("Could not enable raw gyroscope");
       bno_gyro_init = true;
     }
@@ -885,11 +983,18 @@ static void imuThread( void *pvParameters )
   #endif
 
   while(1) {
-    myDelayMs(IMU_SAMPLE_PERIOD_MS);
+    myDelayMs(50);
+
+    // #ifdef DEBUG_TICK
+    // if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    //   SERIAL.println("TICK IMU");
+    //   xSemaphoreGive( dbSem );
+    // }
+    // #endif
 
     // try to acquire lock on i2c bus and take measurements
     // from the IMU and high g accelerometer
-    if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
+    if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 50 ) == pdTRUE ) {
       
       // if (bno08x.wasReset()) {
       //   Serial.print("sensor was reset ");
@@ -910,15 +1015,19 @@ static void imuThread( void *pvParameters )
     }
 
     switch (bnoValue.sensorId) {
-      case SH2_RAW_ACCELEROMETER:
-        imuData.data[0] = bnoValue.un.rawAccelerometer.x;
-        imuData.data[1] = bnoValue.un.rawAccelerometer.y;
-        imuData.data[2] = bnoValue.un.rawAccelerometer.z;
+      case SH2_ACCELEROMETER:
+        //ledColor(ERR_2);
+        // in units of gravity
+        imuData.data[0] = (int16_t) (bnoValue.un.accelerometer.x * UNIT_SCALE);
+        imuData.data[1] = (int16_t) (bnoValue.un.accelerometer.y * UNIT_SCALE);
+        imuData.data[2] = (int16_t) (bnoValue.un.accelerometer.z * UNIT_SCALE);
         break;
-      case SH2_RAW_GYROSCOPE:
-        imuData.data[3] = bnoValue.un.rawGyroscope.x;
-        imuData.data[4] = bnoValue.un.rawGyroscope.y;
-        imuData.data[5] = bnoValue.un.rawGyroscope.z;
+      case SH2_GYROSCOPE_CALIBRATED:
+        //ledColor(ERR_3);
+        // in radians, convert to degreess before storing
+        imuData.data[3] = (int16_t) (bnoValue.un.gyroscope.x * RAD2DEG * UNIT_SCALE);
+        imuData.data[4] = (int16_t) (bnoValue.un.gyroscope.y * RAD2DEG * UNIT_SCALE);
+        imuData.data[5] = (int16_t) (bnoValue.un.gyroscope.z * RAD2DEG * UNIT_SCALE);
         break;
     }
 
@@ -926,6 +1035,8 @@ static void imuThread( void *pvParameters )
 
     // copy high g acc data (h3lis100) into logging structs
     accData.t = last_sample_time / TIME_SCALE;
+    imuData.t = last_sample_time / TIME_SCALE;
+
     accData.data[0] = h3event.acceleration.x * UNIT_SCALE;
     accData.data[1] = h3event.acceleration.y * UNIT_SCALE;
     accData.data[2] = h3event.acceleration.z * UNIT_SCALE;
@@ -935,40 +1046,68 @@ static void imuThread( void *pvParameters )
     if( bno_ok )   imuData.ok |= 0x0F;
     if( highg_ok ) imuData.ok |= 0xF0;
 
-    // try to write the imu and acc structs to the SD log buffer
-    while( writeToLogBuf(PTYPE_IMU, &imuData, sizeof(imu_t)) > 0);
-    while( writeToLogBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
 
-    // try to write these data to the pi buffer lines to be sent out over serial
-    while( writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t))> 0);
-    while( writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t))> 0);
+    if( last_sample_time - lastlast_sample_time > (IMU_SAMPLE_PERIOD_MS - 100) ){
+      lastlast_sample_time = last_sample_time;
 
-    // try to write to radio debug buffer
-    while( writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t)) > 0);
-    while( writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
+      // #ifdef DEBUG
+      // if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      //   Serial.println("IMU: writing to SD log");
+      //   xSemaphoreGive( dbSem );
+      // }
+      // #endif
+
+      // try to write the imu and acc structs to the SD log buffer
+      writeToLogBuf(PTYPE_IMU, &imuData, sizeof(imu_t));
+      writeToLogBuf(PTYPE_ACC, &accData, sizeof(acc_t));
+
+      // #ifdef DEBUG
+      // if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      //   Serial.println("IMU: writing to PTX buffer");
+      //   xSemaphoreGive( dbSem );
+      // }
+      // #endif
+
+      // try to write these data to the pi buffer lines to be sent out over serial
+      writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t));
+      writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t));
+
+      // #ifdef DEBUG
+      // if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      //   Serial.println("IMU: writing to RADIO buffer");
+      //   xSemaphoreGive( dbSem );
+      // }
+      // #endif
+
+      // try to write to radio debug buffer
+      //while( writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t)) > 0);
+      //while( writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
+      writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t));
+      writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t));
+    }
 
     #ifdef DEBUG_IMU
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
       Serial.print("BNO088 aX: ");
-      Serial.print(imuData.data[0], 4);
+      Serial.print((float)(imuData.data[0] / (float)UNIT_SCALE), 4);
       Serial.print("\taY: ");
-      Serial.print(imuData.data[1], 4);
+      Serial.print(imuData.data[1] / UNIT_SCALE, 4);
       Serial.print("\taZ: ");
-      Serial.println(imuData.data[2], 4);
+      Serial.println(imuData.data[2] / UNIT_SCALE, 4);
 
       Serial.print("BNO088 gX: ");
-      Serial.print(imuData.data[3], 4);
+      Serial.print(bnoValue.un.rawGyroscope.x, 4);
       Serial.print("\tgY: ");
-      Serial.print(imuData.data[4], 4);
+      Serial.print(imuData.data[4] / UNIT_SCALE, 4);
       Serial.print("\tgZ: ");
-      Serial.println(imuData.data[5], 4);
+      Serial.println(imuData.data[5] / UNIT_SCALE, 4);
 
       Serial.print("H3LIS100 aX: ");
-      Serial.print(accData.data[0], 4);
+      Serial.print(accData.data[0] / UNIT_SCALE, 4);
       Serial.print("\taY: ");
-      Serial.print(accData.data[1], 4);
+      Serial.print(accData.data[1] / UNIT_SCALE, 4);
       Serial.print("\taZ: ");
-      Serial.println(accData.data[2], 4);
+      Serial.println(accData.data[2] / UNIT_SCALE, 4);
 
       xSemaphoreGive( dbSem );
     }
@@ -1043,13 +1182,14 @@ static void prsThread( void *pvParameters )
       }
 
       // try to write this data to the log buffer
-      while( writeToLogBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
+      writeToLogBuf(PTYPE_PRS, &data, sizeof(prs_t));
 
       // try to write to pi output buffer
-      while( writeToPtxBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
+      writeToPtxBuf(PTYPE_PRS, &data, sizeof(prs_t));
 
       // try to write to the radio send buffer
-      while( writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
+      //while( writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
+      writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t));
 
       //myDelayMs(1000);
 
@@ -1487,7 +1627,7 @@ static void packetBuildThread( void * pvParameters )
 
     // try to write this data to the log buffer
     // TODO: don't try forever
-    while( writeToLogBuf(PTYPE_PACKET, &packet, sizeof(packet_t)) > 0);
+    writeToLogBuf(PTYPE_PACKET, &packet, sizeof(packet_t));
 
     // build a packet periodically
     myDelayMs(PACKET_BUILD_PERIOD);
@@ -1516,6 +1656,13 @@ static void tcThread( void *pvParameters )
     if( xTaskGetTickCount() - lastRead > TC_SAMPLE_PERIOD_MS ){
       lastRead = xTaskGetTickCount();
       //safeKick();
+
+    #ifdef DEBUG_TICK
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("TICK RADIO");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
 
       if ( xSemaphoreTake( ledSem, ( TickType_t ) 100 ) == pdTRUE ) {
         ledState = (ledState + 1) % 4;
@@ -1552,13 +1699,14 @@ static void tcThread( void *pvParameters )
       }
 
       // try to write this data to the log buffer
-      while( writeToLogBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+      writeToLogBuf(PTYPE_TC, &data, sizeof(tc_t));
 
       // try to write this data to the pi buff 
-      while( writeToPtxBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+      writeToPtxBuf(PTYPE_TC, &data, sizeof(tc_t));
 
       // try to put in the radio send buffer
-      while( writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+      //while( writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
+      writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t));
       
     }
 
@@ -1699,6 +1847,13 @@ if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
       continue;
     }
 
+    #ifdef DEBUG_TICK
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("TICK LOG");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+
     // wait indefinitely for the SD mutex
     //while( xSemaphoreTake( sdSem, portMAX_DELAY ) != pdPASS );
     if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -1823,10 +1978,6 @@ void setup() {
     delay(100);
   }
 
-  for( int i=0; i<50; i++ ){
-    ledColor(i%5);
-    delay(50);
-  }
 
   delay(100);
   SERIAL_GPS.begin(9600); // init gps serial
@@ -1851,18 +2002,13 @@ void setup() {
   pinMode(PIN_RADIO_SS, OUTPUT);
   pinMode(PIN_3V32_CONTROL, OUTPUT);
   pinMode(PIN_GATE_IR, OUTPUT);
-  pinMode(PIN_GATE_PI, OUTPUT);
   pinMode(PIN_GATE_SPEC, OUTPUT);
+
+  digitalWrite( PIN_GATE_IR, LOW );
+  digitalWrite( PIN_GATE_SPEC, LOW );
 
   // battery voltage divider
   pinMode(PIN_VBAT, INPUT);
-
-  // manual reset on RFM69 radio, won't do anything if unpowered (3v32_ctrl pin)
-  pinMode(PIN_RADIO_RESET, OUTPUT);
-  digitalWrite(PIN_RADIO_RESET, HIGH);
-  delay(10);
-  digitalWrite(PIN_RADIO_RESET, LOW);
-  delay(10);
 
   Wire.begin();
   Wire.setClock(100000); // safer?
@@ -1960,6 +2106,12 @@ void setup() {
     if ( ( sdSem ) != NULL )
       xSemaphoreGive( ( sdSem ) );  // make available
   }
+  // setup sd sem
+  if ( piBufSem == NULL ) {
+    piBufSem = xSemaphoreCreateMutex();  // create mutex
+    if ( ( piBufSem ) != NULL )
+      xSemaphoreGive( ( piBufSem ) );  // make available
+  }
 
   #ifdef DEBUG
   SERIAL.println("Created semaphores...");
@@ -1969,16 +2121,16 @@ void setup() {
   /**************
   * CREATE TASKS
   **************/
+  xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
   xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
-  xTaskCreate(logThread,  "SD Logging", 512, NULL, tskIDLE_PRIORITY-1, &Handle_logTask);
-  xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
-  xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
-  xTaskCreate(prsThread,  "Pressure Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
+  xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
+  //xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
+  //xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
+  //xTaskCreate(prsThread,  "Pressure Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
-  xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
+  //xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
+  //xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
-  xTaskCreate(radThread, "Telem radio", 512, NULL, tskIDLE_PRIORITY, &Handle_radTask);
   
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
 

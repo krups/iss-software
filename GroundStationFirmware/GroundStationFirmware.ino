@@ -48,7 +48,10 @@ static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (tele
 static uint16_t radioTxBufSize = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
 static uint16_t radioRxBufSize = 0;
-RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, &SPI); // debug radio object
+static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
+RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, false, &SPI); // debug radio object
+
+char printBuffer[600];
 
 // for printing data to serial
 StaticJsonDocument<1024> doc;
@@ -70,11 +73,10 @@ void cmd_set_target(SerialCommands* sender)
 	if (targetNodeStr == NULL) {
     // if no arg supplied, set target node to TESTNODE
 		targetNode = NODE_ADDRESS_TESTNODE;
-		return;
 	}
   
   // set node address to TESTNODE if supplied argument is invalid
-	if (targetNode = atoi(targetNodeStr) == 0 ){
+	if ( (targetNode = atoi(targetNodeStr)) == 0 ){
     targetNode = NODE_ADDRESS_TESTNODE;
   }
 
@@ -92,7 +94,7 @@ void cmd_build_packet(SerialCommands* sender)
 {
   #ifdef DEBUG_SEND
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-    sender->GetSerial()->print("sending parachute deploy...");
+    sender->GetSerial()->print("sending build packet command..");
     xSemaphoreGive( dbSem );
   }
   #endif
@@ -149,7 +151,7 @@ void cmd_help(SerialCommands* sender, const char* cmd)
 
 SerialCommand cmd_bp_("bp", cmd_build_packet); // build iridium packet
 SerialCommand cmd_sp_("sp", cmd_send_packet); // send iridium packet
-SerialCommand cmd_st_("target", cmd_send_packet); // set target
+SerialCommand cmd_st_("target", cmd_set_target); // set target
 
 
 // dispacth a command received from the capsule (if any, could be used as ACK / heartbeat)
@@ -172,6 +174,13 @@ void dispatchCommand(int senderId, cmd_t command )
 void radioThread( void *param ){
   int fromNode = -1;
   cmd_t inCmd;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+    Serial.println("Radio thread starting...");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
   
   radio.initialize(FREQUENCY, NODE_ADDRESS_STATION, NETWORK_ID);
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
@@ -188,19 +197,26 @@ void radioThread( void *param ){
       // check for any received packets, but only if they will fit in our RX buffer
       if (radio.receiveDone())
       {
+          // #ifdef DEBUG
+          // if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          //   Serial.println("Radio got data!");
+          //   xSemaphoreGive( dbSem );
+          // }
+          // #endif
+
         if( (radioRxBufSize + radio.DATALEN) < RADIO_RX_BUFSIZE) {
           memcpy(radioRxBuf, radio.DATA, radio.DATALEN);
           radioRxBufSize += radio.DATALEN;
 
-          #ifdef DEBUG_RADIO
-          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-            Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
-            for (byte i = 0; i < radio.DATALEN; i++)
-              Serial.print((char)radio.DATA[i]);
-            Serial.print("   [RX_RSSI:");Serial.print(radio.RSSI);Serial.print("]");
-            xSemaphoreGive( dbSem );
-          }
-          #endif
+          // #ifdef DEBUG_RADIO
+          // if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          //   Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
+          //   for (byte i = 0; i < radio.DATALEN; i++)
+          //     Serial.print((char)radio.DATA[i]);
+          //   Serial.print("   [RX_RSSI:");Serial.print(radio.RSSI);Serial.print("]");
+          //   xSemaphoreGive( dbSem );
+          // }
+          // #endif
         }
 
         // ack even if we didb't copy the data to our buffer
@@ -229,14 +245,7 @@ void radioThread( void *param ){
     // that the first byte of the rx buffer is always a packet ID byte
     if( radioRxBufSize > 0 ){
       
-      #ifdef DEBUG_RADIO
-      if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-        Serial.print("RADIO: got ");
-        Serial.print(radioRxBufSize);
-        Serial.println("bytes");
-        xSemaphoreGive( dbSem );
-      }
-      #endif
+  
 
       // parse the buffer
       // control capsule functionality based on command packets
@@ -244,39 +253,141 @@ void radioThread( void *param ){
       bool goon = true;
       int radrxbufidx = 0;
       while( goon ){
-        switch( radioRxBuf[radrxbufidx] ){
-          case PTYPE_CMD:
-            if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx)){
-              // short read, ditch it
-              // TODO: handle this better
-              radrxbufidx = radioRxBufSize;
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.println("RADIO:  less data in the radio buffer than expected");
-                xSemaphoreGive( dbSem );
-              }
-              #endif
-            } else {
-              memcpy(&inCmd, &radioRxBuf[radrxbufidx], sizeof(cmd_t));
-              radrxbufidx += sizeof(cmd_t);
-              dispatchCommand(fromNode, inCmd);
-            }
+
+        // #ifdef DEBUG_RADIO
+        // if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        //   Serial.print("RADIO: got ");
+        //   Serial.print(radioRxBufSize);
+        //   Serial.print("bytes, ID is: ");
+        //   Serial.println(radioRxBuf[radrxbufidx], HEX);
+        //   xSemaphoreGive( dbSem );
+        // }
+        // #endif
+
+        if( radioRxBuf[radrxbufidx] == PTYPE_CMD ){
+          if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx + 1)){
+            goon = false;
             break;
-          default:
-            #ifdef DEBUG_RADIO
-            if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-              Serial.println("RADIO:  received unknown command byte: ");
-              Serial.print(radioRxBuf[radrxbufidx], HEX);
-              xSemaphoreGive( dbSem );
-            }
-            #endif
-            break;
+          } else {
+            memcpy(&inCmd, &radioRxBuf[++radrxbufidx], sizeof(cmd_t));
+            radrxbufidx += sizeof(cmd_t);
+            sprintf(printBuffer, "RAD: got command\n");
+            dispatchCommand(fromNode, inCmd);
+          }
         }
+        else if( radioRxBuf[radrxbufidx] == PTYPE_TC) {
+          if( sizeof(tc_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_TC, &radioRxBuf[radrxbufidx+1], sizeof(tc_t));
+            radrxbufidx += sizeof(tc_t) + 1;
+          }
+        } else if(  radioRxBuf[radrxbufidx] == PTYPE_IMU ){
+          if( sizeof(imu_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_IMU, &radioRxBuf[radrxbufidx+1], sizeof(imu_t));
+            radrxbufidx += sizeof(imu_t) + 1;
+          }
+        } else if ( radioRxBuf[radrxbufidx] == PTYPE_ACC ){
+          if( sizeof(acc_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_ACC, &radioRxBuf[radrxbufidx+1], sizeof(acc_t));
+            radrxbufidx += sizeof(acc_t) + 1;
+          }
+        } else if ( radioRxBuf[radrxbufidx] == PTYPE_PRS ){
+          if( sizeof(prs_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_PRS, &radioRxBuf[radrxbufidx+1], sizeof(prs_t));
+            radrxbufidx += sizeof(prs_t) + 1;
+          }
+        } else if(  radioRxBuf[radrxbufidx] == PTYPE_GGA ){
+          if( sizeof(gga_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_GGA, &radioRxBuf[radrxbufidx+1], sizeof(gga_t));
+            radrxbufidx += sizeof(gga_t) + 1;
+          }
+        } else if(  radioRxBuf[radrxbufidx] == PTYPE_RMC ){
+          if( sizeof(rmc_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_RMC, &radioRxBuf[radrxbufidx+1], sizeof(rmc_t));
+            radrxbufidx += sizeof(rmc_t) + 1;
+          }
+        } else if(  radioRxBuf[radrxbufidx] == PTYPE_SPEC ){
+          if( sizeof(spec_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+            break;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_SPEC, &radioRxBuf[radrxbufidx+1], sizeof(spec_t));
+            radrxbufidx += sizeof(spec_t) + 1;
+          }
+        } else {
+          printBuffer[0] = 0;
+          radrxbufidx++;
+          #ifdef DEBUG_RADIO
+          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+            Serial.println("RADIO:  received unknown command byte: ");
+            Serial.print(radioRxBuf[radrxbufidx], HEX);
+            xSemaphoreGive( dbSem );
+          }
+          #endif
+        }
+        
+        // if we received a packet with printable data, and there is a non-null
+        // string to print in the print buffer, then try to print over serial
+        if( printBuffer[0] > 0){
+          #ifdef DEBUG
+          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+            Serial.print("DATA: ");
+            Serial.write(printBuffer);
+            xSemaphoreGive( dbSem );
+          }
+          #endif
+        }
+
         if( radrxbufidx == radioRxBufSize ){
           goon = false;
         }
       }
 
+      // if there was a fragment of a packet left in the buffer
+      // move the remaining bytes to the beginning of the buffer and
+      // set the buffer size accordingly
+      // ignore if a fragment is all thats left in the buffer
+      if( radrxbufidx < radioRxBufSize && radrxbufidx > 0){
+
+        // copy remaining bytes to temp buf then back to begining of rx buffer
+        memcpy(radioTmpBuf, &radioRxBuf[radrxbufidx], radioRxBufSize - radrxbufidx);
+        memcpy(radioRxBuf, radioTmpBuf, radioRxBufSize - radrxbufidx);
+        radioRxBufSize = radioRxBufSize - radrxbufidx;
+
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.println("RADIO:  copyied fragment");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      } else if( radrxbufidx == radioRxBufSize && radrxbufidx > 0 ){
+        // received data was complete packets, no fragments
+        radioRxBufSize = 0;
+      }
+
+      // #ifdef DEBUG_RADIO
+      // if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+      //   Serial.println("RADIO: end of got data");
+      //   xSemaphoreGive( dbSem );
+      // }
+      // #endif
     }
 
     // now check if we have any packets in the TX buffer.
@@ -343,6 +454,8 @@ void radioThread( void *param ){
 
       radioTxBufSize = 0;
     } // end if radioTxBufSize > 0
+  
+    myDelayMs(10);
   }
 
   vTaskDelete (NULL);
@@ -379,7 +492,7 @@ void setup() {
   digitalWrite(PIN_RADIO_RESET, LOW);
   delay(10);
 
-  delay(4000);
+  delay(7000);
   
   #if DEBUG
   PC_SERIAL.println("Starting...");
@@ -398,12 +511,18 @@ void setup() {
     if ( ( cmdSem ) != NULL )
       xSemaphoreGive( ( cmdSem ) );  // make available
   }
+  // setup command struct semaphore
+  if ( spiSem == NULL ) {
+    spiSem = xSemaphoreCreateMutex();  // create mutex
+    if ( ( spiSem ) != NULL )
+      xSemaphoreGive( ( spiSem ) );  // make available
+  }
 
   /**************
   * CREATE TASKS
   **************/
-  xTaskCreate(radioThread, "Radio Control", 1000, NULL, tskIDLE_PRIORITY + 2, &Handle_radTask);
-  xTaskCreate(serialThread, "Serial Interface", 1000, NULL, tskIDLE_PRIORITY + 2, &Handle_serTask);
+  xTaskCreate(radioThread, "Radio Control", 1024, NULL, tskIDLE_PRIORITY + 2, &Handle_radTask);
+  xTaskCreate(serialThread, "Serial Interface", 1024, NULL, tskIDLE_PRIORITY + 2, &Handle_serTask);
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
   
   #if DEBUG

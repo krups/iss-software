@@ -4,20 +4,22 @@
 #define USE_DEBUG_RADIO 1
 #define DEBUG 1 // usb serial debug switch
 #ifdef DEBUG
-  //#define DEBUG_GPS 1 // print raw gga to serial
+  #define DEBUG_GPS 1 // print raw gga to serial
   //#define DEBUG_QUEUE 1 // print info on log queue operations
   //#define DEBUG_VERBOSE 1
   //#define DEBUG_BARO 1
   //#define DEBUG_IRD 1
   #define DEBUG_LOG 1
-  #define DEBUG_PAR 1
-  //#define DEBUG_RAD 1
+  #define DEBUG_TICK 1
+  #define DEBUG_RADIO 1
   //#define DEBUG_SPEC 1
-  #define DEBUG_IMU 1
+  //#define DEBUG_IMU 1
   //#define DEBUG_TC
   //#define DEBUG_TPMS_TRANSFER
 //#define DEBUG_MCP_STARTUP
 #endif
+
+#define RAD2DEG 57.2957795131
 
 #define TIME_SCALE 100 // ticks per time unit
 

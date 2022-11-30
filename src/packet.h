@@ -142,62 +142,76 @@ struct rxtlm_t {
 // helper to format binary data as CSV strings for printing
 // needed to send data to pi.
 // this needs to be manually updated if packet structure changes in packet.h
-int writePacketAsPlaintext(char *dest, uint8_t ptype, void* data, size_t size) {
+int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size) {
   int ret = -1;
 
-  switch( ptype ) {
-    case PTYPE_ACC:
-      ret = sprintf(dest, 
+  if( ptype == PTYPE_TC) {
+    tc_t td;
+    memcpy(&td, data, size);
+    ret = sprintf(dest,
+                  "TC: %d, %d, %d, %d, %d, %d, %d\n", 
+                  td.t, 
+                  td.data[0], 
+                  td.data[1], 
+                  td.data[2],
+                  td.data[3],
+                  td.data[4],
+                  td.data[5]);
+
+  } else if(  ptype == PTYPE_IMU ){
+    imu_t imu;
+    memcpy(&imu, data, size);
+    ret = sprintf(dest,
+                  "IMU: %d, %d, %d, %d, %d, %d, %d\n", 
+                  imu.t, 
+                  imu.data[0], 
+                  imu.data[1], 
+                  imu.data[2],
+                  imu.data[3],
+                  imu.data[4],
+                  imu.data[5]);
+
+  } else if ( ptype == PTYPE_ACC ){
+    acc_t acc;
+    memcpy(&acc, data, size);
+    ret = sprintf(dest, 
                   "ACC: %d, %d, %d, %d\n", 
-                  ((acc_t*)data)->t, 
-                  ((acc_t*)data)->data[0], 
-                  ((acc_t*)data)->data[1], 
-                  ((acc_t*)data)->data[2]);
-      break;
+                  acc.t, 
+                  acc.data[0], 
+                  acc.data[1], 
+                  acc.data[2]);
+  } else if ( ptype == PTYPE_PRS ){
+    prs_t prs;
+    memcpy(&prs, data, size);
+    ret = sprintf(dest,
+            "PRS: %d, %d, %d, %d, %d, %d\n", 
+            prs.t, 
+            prs.data[0], 
+            prs.data[1], 
+            prs.data[2],
+            prs.data[3],
+            prs.data[4]);
 
-    case PTYPE_PRS:
-      ret = sprintf(dest,
-                  "PRS: %d, %d, %d, %d, %d, %d\n", 
-                  ((prs_t*)data)->t, 
-                  ((prs_t*)data)->data[0], 
-                  ((prs_t*)data)->data[1], 
-                  ((prs_t*)data)->data[2],
-                  ((prs_t*)data)->data[3],
-                  ((prs_t*)data)->data[4]);
-      break;
+  } else if(  ptype == PTYPE_GGA ){
+    gga_t gga;
+    memcpy(&gga, data, size);
+    ret = sprintf(dest,
+            "GGA: TBD\n");
 
-    case PTYPE_TC:
-      ret = sprintf(dest,
-                  "TC: %d, %d, %d, %d, %d, %d\n", 
-                  ((tc_t*)data)->t, 
-                  ((tc_t*)data)->data[0], 
-                  ((tc_t*)data)->data[1], 
-                  ((tc_t*)data)->data[2],
-                  ((tc_t*)data)->data[3],
-                  ((tc_t*)data)->data[4],
-                  ((tc_t*)data)->data[5]);
-      break;
+  } else if( ptype == PTYPE_RMC ){
+    rmc_t rmc;
+    memcpy(&rmc, data, size);
+    ret = sprintf(dest,
+            "RMC: TBD\n");
 
-    case PTYPE_IMU:
-      ret = sprintf(dest,
-                  "IMU: %d, %d, %d, %d, %d, %d\n", 
-                  ((imu_t*)data)->t, 
-                  ((imu_t*)data)->data[0], 
-                  ((imu_t*)data)->data[1], 
-                  ((imu_t*)data)->data[2],
-                  ((imu_t*)data)->data[3],
-                  ((imu_t*)data)->data[4],
-                  ((imu_t*)data)->data[5]);
-      break;
-    
-    case PTYPE_RMC:
-      break;
-
-    case PTYPE_GGA:
-      break;
-    
-    default:
-      break;
+  } else if( ptype == PTYPE_SPEC ){
+    spec_t spec;
+    memcpy(&spec, data, size);
+    ret = sprintf(dest,
+            "SPEC: TBD\n");
+  } else {
+    ret = sprintf(dest,
+            "Unknown packet type!\n");
   }
 
   // return number of bytes written to buffer

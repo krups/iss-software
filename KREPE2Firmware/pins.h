@@ -10,12 +10,12 @@
 #define PIN_EXT_INT                14 // continuity interrupt for KREM release
 
 // RFM69 connections (plus SPI)
-#define PIN_RADIO_SS               10
-#define PIN_RADIO_RESET             9
+#define PIN_RADIO_SS               10 // RFM69 chip select line
+#define PIN_RADIO_RESET            9  // RFM69 reset line
+#define PIN_RADIO_INT              4  // radio interrupt pin connected to DIO 0 on RFM69 
 
 #define PIN_3V32_CONTROL           6  // enable pin to 3v3 regulator (which powers the RS232 IC and RFM69 radio)
 #define PIN_GATE_SPEC              5  // positive logic enable for 5V on BSMS port
-#define PIN_GATE_PI                4  // positive logic enable for 5V on PI port
 #define PIN_GATE_IR                11 // positive logic enable for powering the Iridium and GPS ports
 
 // J1 POL Serial1, designated for NanoPi 
@@ -27,6 +27,7 @@
 #define PIN_TX2                   12
 
 // RGPS and TGPS, the serial pins to the GPS port
+// SERCOM4 
 #define PIN_RX3                   17
 #define PIN_TX3                   16
 
