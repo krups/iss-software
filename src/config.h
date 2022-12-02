@@ -10,8 +10,9 @@
   //#define DEBUG_BARO 1
   //#define DEBUG_IRD 1
   #define DEBUG_LOG 1
-  #define DEBUG_TICK 1
-  #define DEBUG_RADIO 1
+  //#define DEBUG_TICK 1
+  //#define DEBUG_RADIO 1
+  //#define DEBUG_PRESSURE 1
   //#define DEBUG_SPEC 1
   //#define DEBUG_IMU 1
   //#define DEBUG_TC

@@ -3,6 +3,7 @@
 
 // logging packet structure
 #include "config.h"
+#include <avr/dtostrf.h>
 
 #define PTYPE_GGA  1  // nmea::GgaData
 #define PTYPE_RMC  2  // nmea::RmcData
@@ -78,6 +79,7 @@ struct prs_t {
   uint16_t data[NUM_PRS_CHANNELS];
 };
 
+// type PTYPE_RMC
 struct rmc_t {
   uint32_t t; // microprocessor time in ms
   uint16_t time[4]; // hh:mm:ss:us GPS time
@@ -87,6 +89,7 @@ struct rmc_t {
   float course;
 };
 
+// type PTYPE_GGA
 struct gga_t {
   uint32_t t;
   uint16_t time[4];
@@ -191,18 +194,52 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
             prs.data[2],
             prs.data[3],
             prs.data[4]);
-
+  
+  // GGA DATA
   } else if(  ptype == PTYPE_GGA ){
     gga_t gga;
+    char latBuf[10], lonBuf[10], altBuf[10], hdopBuf[10];
     memcpy(&gga, data, size);
-    ret = sprintf(dest,
-            "GGA: TBD\n");
 
+    dtostrf( gga.lat, 7, 5, latBuf );
+    dtostrf( gga.lon, 7, 5, lonBuf );
+    dtostrf( gga.hdop, 7, 5, hdopBuf );
+    dtostrf( gga.alt, 7, 5, altBuf );
+
+    ret = sprintf(dest,
+                  "GGA: %d, %d:%d:%d:%d, %s, %s, %s, %s\n",
+                  gga.t, // system time
+                  gga.time[0],
+                  gga.time[1],
+                  gga.time[2],
+                  gga.time[3],
+                  latBuf,
+                  lonBuf,
+                  altBuf,
+                  hdopBuf);
+
+  // RMC DATA
   } else if( ptype == PTYPE_RMC ){
     rmc_t rmc;
+    char latBuf[10], lonBuf[10], spdBuf[10], crsBuf[10];
     memcpy(&rmc, data, size);
+    
+    dtostrf( rmc.lat, 7, 5, latBuf );
+    dtostrf( rmc.lon, 7, 5, lonBuf );
+    dtostrf( rmc.speed, 7, 5, spdBuf );
+    dtostrf( rmc.course, 7, 5, crsBuf );
+
     ret = sprintf(dest,
-            "RMC: TBD\n");
+                  "RMC: %d, %d:%d:%d:%d, %s, %s, %s, %s\n",
+                  rmc.t, // system time
+                  rmc.time[0],
+                  rmc.time[1],
+                  rmc.time[2],
+                  rmc.time[3],
+                  latBuf,
+                  lonBuf,
+                  spdBuf,
+                  crsBuf);
 
   } else if( ptype == PTYPE_SPEC ){
     spec_t spec;

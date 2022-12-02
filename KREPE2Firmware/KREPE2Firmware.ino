@@ -324,6 +324,10 @@ static void piThread(void *pvParameters)
     ptxBuf2LineSize[i] = 0;
   }
 
+  // 5 seconds after boot, turn on the pi and let it boot
+  // BSMS and pi are on same mosftet , use bsms gate wire
+  digitalWrite(PIN_GATE_SPEC, HIGH);
+
   while (1)
   {
     // check if we have been asked to send anything to the Pi
@@ -558,7 +562,7 @@ static void radThread(void *pvParameters)
     // need to get access to send buffer and SD buffer
     if( radioTxBufSize2 > 0 ){
       
-      #ifdef DEBUG
+      #ifdef DEBUG_RADIO
       if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
         SERIAL.print("RAD: have data to send!");
         xSemaphoreGive( dbSem );
@@ -571,7 +575,7 @@ static void radThread(void *pvParameters)
       while ((radioTxBufSize2 - txBufPos) > 0)
       {
 
-        #ifdef DEBUG
+        #ifdef DEBUG_RADIO
         if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
           SERIAL.print("RAD: have ");
           SERIAL.print(radioTxBufSize2);
@@ -640,19 +644,19 @@ static void radThread(void *pvParameters)
 void ledColor(int type) {
   switch (type) {
   case ERR_BOOT:
-    led.setPixelColor(0, led.Color(150, 0, 0));
+    led.setPixelColor(0, led.Color(5, 0, 0));
     break;
   case ERR_2:
-    led.setPixelColor(0, led.Color(150, 0, 150));
+    led.setPixelColor(0, led.Color(5, 0, 5));
     break;
   case ERR_3:
-    led.setPixelColor(0, led.Color(150, 150, 0));
+    led.setPixelColor(0, led.Color(5, 5, 0));
     break;
   case ERR_4:
-    led.setPixelColor(0, led.Color(0, 150, 150));
+    led.setPixelColor(0, led.Color(0, 5, 5));
     break;
   default:
-    led.setPixelColor(0, led.Color(100, 100, 100));
+    led.setPixelColor(0, led.Color(5, 5, 5));
   }
   led.show();
 }
@@ -786,7 +790,7 @@ void onGgaUpdate(nmea::GgaData const gga)
   //}
   #endif
 
-  data.t = xTaskGetTickCount();
+  data.t = (uint16_t) xTaskGetTickCount() / TIME_SCALE;
   data.time[0] = (uint16_t)gga.time_utc.hour;
   data.time[1] = (uint16_t)gga.time_utc.minute;
   data.time[2] = (uint16_t)gga.time_utc.second;
@@ -1132,7 +1136,7 @@ static void prsThread( void *pvParameters )
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-    Serial.println("Perssure thread started");
+    Serial.println("Pressure thread started");
     xSemaphoreGive( dbSem );
   }
   #endif
@@ -1144,14 +1148,19 @@ static void prsThread( void *pvParameters )
 
       if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
         select_i2cmux_channel(MUXCHAN_PS1);
+        myDelayUs(800);
         ps1.update();
         select_i2cmux_channel(MUXCHAN_PS2);
+        myDelayUs(800);
         ps2.update();
         select_i2cmux_channel(MUXCHAN_PS3);
+        myDelayUs(800);
         ps3.update();
         select_i2cmux_channel(MUXCHAN_PS4);
+        myDelayUs(800);
         ps4.update();
         select_i2cmux_channel(MUXCHAN_PS5);
+        myDelayUs(800);
         ps5.update();
         xSemaphoreGive( i2c1Sem ); 
       }
@@ -1535,7 +1544,7 @@ static void packetBuildThread( void * pvParameters )
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-    Serial.println("Compression thread started");
+    Serial.println("Packet build thread started");
     xSemaphoreGive( dbSem );
   }
   #endif
@@ -1997,7 +2006,7 @@ void setup() {
   pinPeripheral(12, PIO_SERCOM);
 
 
-  // reset pin for lora radio
+  // reset pin for RFM69 radio
   pinMode(PIN_RADIO_RESET, OUTPUT);
   pinMode(PIN_RADIO_SS, OUTPUT);
   pinMode(PIN_3V32_CONTROL, OUTPUT);
@@ -2124,12 +2133,12 @@ void setup() {
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
   xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
-  //xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
-  //xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
-  //xTaskCreate(prsThread,  "Pressure Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
+  xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
+  xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
+  xTaskCreate(prsThread,  "Pressure Measurement", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
-  //xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  //xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
+  xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
+  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);

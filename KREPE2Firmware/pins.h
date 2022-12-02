@@ -46,11 +46,11 @@
 #define PIN_VBAT                  A6
 
 // I2C mux connections for ported pressure sensors
-#define MUXCHAN_PS1 1
-#define MUXCHAN_PS2 2
-#define MUXCHAN_PS3 3
-#define MUXCHAN_PS4 4
-#define MUXCHAN_PS5 5
+#define MUXCHAN_PS1 0
+#define MUXCHAN_PS2 1
+#define MUXCHAN_PS3 2
+#define MUXCHAN_PS4 3
+#define MUXCHAN_PS5 4
 
 
 #endif
