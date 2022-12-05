@@ -81,7 +81,6 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
         else if( type==PTYPE_IMU  ) offset = sizeof (imu_t);
         else if( type==PTYPE_GGA  ) offset = sizeof (gga_t);
         else if( type==PTYPE_RMC  ) offset = sizeof (rmc_t);
-        else if( type==PTYPE_BAR  ) offset = sizeof (bar_t);
         else if( type==PTYPE_PACKET ) offset = sizeof (packet_t);
         else break; // we are lost, break so we seek to next block
 
@@ -171,7 +170,7 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
         else if( type==PTYPE_IMU  ) offset = sizeof (imu_t);
         else if( type==PTYPE_GGA  ) offset = sizeof (gga_t);
         else if( type==PTYPE_RMC  ) offset = sizeof (rmc_t);
-        else if( type==PTYPE_BAR  ) offset = sizeof (bar_t);
+        //else if( type==PTYPE_BAR  ) offset = sizeof (bar_t);
         else if( type==PTYPE_PACKET ) offset = sizeof (packet_t);
         else break; // we are lost, break so we seek to next block
 

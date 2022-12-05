@@ -12,10 +12,11 @@
 #define PTYPE_TC   5
 #define PTYPE_PRS  6
 #define PTYPE_SPEC 7
-#define PTYPE_BAR  10
 #define PTYPE_CMD  16
 #define PTYPE_QUAT 17
 #define PTYPE_PACKET 99 // compressed packet written to logfile
+
+#define PTYPE_PACKET_REQUEST 0x88
 
 #define MAX_CMD_ARGS 10
 
@@ -152,7 +153,8 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     tc_t td;
     memcpy(&td, data, size);
     ret = sprintf(dest,
-                  "TC: %d, %d, %d, %d, %d, %d, %d\n", 
+                  "%d, %d, %d, %d, %d, %d, %d, %d\n", 
+                  ptype,
                   td.t, 
                   td.data[0], 
                   td.data[1], 
@@ -161,11 +163,15 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
                   td.data[4],
                   td.data[5]);
 
-  } else if(  ptype == PTYPE_IMU ){
+  } 
+  
+  // IMU data
+  else if(  ptype == PTYPE_IMU ){
     imu_t imu;
     memcpy(&imu, data, size);
     ret = sprintf(dest,
-                  "IMU: %d, %d, %d, %d, %d, %d, %d\n", 
+                  "%d, %d, %d, %d, %d, %d, %d, %d\n", 
+                  ptype,
                   imu.t, 
                   imu.data[0], 
                   imu.data[1], 
@@ -174,20 +180,28 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
                   imu.data[4],
                   imu.data[5]);
 
-  } else if ( ptype == PTYPE_ACC ){
+  } 
+  
+  // high g accel data
+  else if ( ptype == PTYPE_ACC ){
     acc_t acc;
     memcpy(&acc, data, size);
     ret = sprintf(dest, 
-                  "ACC: %d, %d, %d, %d\n", 
+                  "%d, %d, %d, %d, %d\n", 
+                  ptype,
                   acc.t, 
                   acc.data[0], 
                   acc.data[1], 
                   acc.data[2]);
-  } else if ( ptype == PTYPE_PRS ){
+  } 
+  
+  // pressure data
+  else if ( ptype == PTYPE_PRS ){
     prs_t prs;
     memcpy(&prs, data, size);
     ret = sprintf(dest,
-            "PRS: %d, %d, %d, %d, %d, %d\n", 
+            "%d, %d, %d, %d, %d, %d, %d\n", 
+            ptype,
             prs.t, 
             prs.data[0], 
             prs.data[1], 
@@ -206,8 +220,10 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     dtostrf( gga.hdop, 7, 5, hdopBuf );
     dtostrf( gga.alt, 7, 5, altBuf );
 
+    // TODO: fix timestamps in printed string
     ret = sprintf(dest,
-                  "GGA: %d, %d:%d:%d:%d, %s, %s, %s, %s\n",
+                  "%d, %d, %d,%d,%d,%d, %s, %s, %s, %s\n",
+                  ptype,
                   gga.t, // system time
                   gga.time[0],
                   gga.time[1],
@@ -229,8 +245,10 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     dtostrf( rmc.speed, 7, 5, spdBuf );
     dtostrf( rmc.course, 7, 5, crsBuf );
 
+    // TODO: fix timestamps in printed string
     ret = sprintf(dest,
-                  "RMC: %d, %d:%d:%d:%d, %s, %s, %s, %s\n",
+                  "%d, %d, %d,%d,%d,%d, %s, %s, %s, %s\n",
+                  ptype,
                   rmc.t, // system time
                   rmc.time[0],
                   rmc.time[1],
@@ -241,12 +259,24 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
                   spdBuf,
                   crsBuf);
 
-  } else if( ptype == PTYPE_SPEC ){
+  } 
+  
+  // spectrometer
+  else if( ptype == PTYPE_SPEC ){
     spec_t spec;
     memcpy(&spec, data, size);
     ret = sprintf(dest,
             "SPEC: TBD\n");
-  } else {
+  } 
+
+  // packet request to pi
+  else if( ptype == PTYPE_PACKET_REQUEST ){
+    dest[0] = ptype;
+    ret = 1;
+  } 
+  
+  // unknown 
+  else {
     ret = sprintf(dest,
             "Unknown packet type!\n");
   }

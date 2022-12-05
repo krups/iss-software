@@ -97,10 +97,10 @@ void onGgaUpdate(nmea::GgaData const);
 
 // rename serial ports
 #define SERIAL      Serial  // debug serial (USB) all uses should be conditional on DEBUG define
-#define SERIAL_PI   Serial1 // UART to Neo Pi port
+#define SERIAL_PI   Serial4 // UART to Neo Pi port
 #define SERIAL_IRD  Serial2 // to iridium modem
 #define SERIAL_GPS  Serial3 // to GPS
-#define SERIAL_BSMS Serial4 // to BSMS 
+#define SERIAL_BSMS Serial1 // to BSMS 
 
 // TC to digital objects
 Adafruit_MCP9600 mcps[6];
@@ -140,13 +140,13 @@ SemaphoreHandle_t piBufSem; // access to the pi send buffer
 // each lines is a null terminated string to be filled by sprintf
 #define PIBUF1 0
 #define PIBUF2 1
-static uint8_t  ptxBuf1[PI_BUFFER_LINES][PI_LINE_SIZE];
-static uint8_t  ptxBuf2[PI_BUFFER_LINES][PI_LINE_SIZE];
-static uint8_t  ptxBuf1Size = 0;
-static uint8_t  ptxBuf2Size = 0;
-static uint16_t ptxBuf1LineSize[PI_BUFFER_LINES];
-static uint16_t ptxBuf2LineSize[PI_BUFFER_LINES];
-static uint8_t  ptxActiveBuf = PIBUF1;
+char  ptxBuf1[PI_BUFFER_LINES][PI_LINE_SIZE];
+char ptxBuf2[PI_BUFFER_LINES][PI_LINE_SIZE];
+int  ptxBuf1Size = 0;
+int  ptxBuf2Size = 0;
+int ptxBuf1LineSize[PI_BUFFER_LINES];
+int ptxBuf2LineSize[PI_BUFFER_LINES];
+int  ptxActiveBuf = PIBUF1;
 volatile bool   ptxBuf1Full = false;
 volatile bool   ptxBuf2Full = false;
 
@@ -155,16 +155,19 @@ uint8_t rbuf[RBUF_SIZE];
 char sbuf[SBUF_SIZE];
 
 // variables for the debug radio
+#ifdef USE_DEBUG_RADIO
 static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
 volatile uint16_t radioTxBufSize = 0;
 static uint8_t radioTxBuf2[RADIO_TX_BUFSIZE]; // copy of buffer for the radio to read from 
 volatile uint16_t radioTxBufSize2 = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
 volatile uint16_t radioRxBufSize = 0;
-
-#ifdef USE_DEBUG_RADIO
+static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
 #endif
+
+// debug message buffer
+char printBuffer[600];
 
 // variables for the ping pong loging buffers
 static uint8_t logBuf1[LOGBUF_BLOCK_SIZE];
@@ -278,12 +281,14 @@ int writeToRadBuf(uint8_t ptype, void* data, size_t size) {
 // ptype is a one byte id, where data holds size bytes of a struct
 int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
   // get access to ptx buffers for writing
-  if ( xSemaphoreTake( piBufSem, ( TickType_t ) 50 ) == pdTRUE ) {
+  if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
     if( ptxActiveBuf == PIBUF1 ){
 
       // write packet data as plain csv to an entry in the ptxBuf1 list
       // incremennt ptxBuf1 entry size by 1
-      ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size++], ptype, (uint8_t*)data, size);
+      ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size], ptype, (uint8_t*)data, size);
+      ptxBuf1LineSize[ptxBuf1Size] = strlen(ptxBuf1[ptxBuf1Size]);
+      ptxBuf1Size++;
 
       // check if ptxbuf1 is full, if so set full flag and change active buffer 
       if( ptxBuf1Size >= PI_BUFFER_LINES ){
@@ -295,6 +300,8 @@ int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
       // write packet data as plain csv to an entry in the ptxBuf12 list
       // incremennt ptxBuf2 entry size by 1
       ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size++], ptype, (uint8_t*)data, size );
+      ptxBuf2LineSize[ptxBuf2Size] = strlen(ptxBuf2[ptxBuf2Size]);
+      ptxBuf2Size++;
 
       // check if ptxbuf2 is full, if so set full flag and change active buffer 
       if( ptxBuf2Size >= PI_BUFFER_LINES ){
@@ -340,22 +347,26 @@ static void piThread(void *pvParameters)
     } else {
       // else there are lines to send 
 
-      // if buffer 1 is full, send all the lines that are queued
-      if( ptxBuf1Full ){
-        for( i=0; i<ptxBuf1Size; i++ ){
-          SERIAL_PI.write(ptxBuf1[i], ptxBuf1LineSize[i]);
+      if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        // if buffer 1 is full, send all the lines that are queued
+        if( ptxBuf1Full ){
+          for( i=0; i<ptxBuf1Size; i++ ){
+            SERIAL_PI.write(ptxBuf1[i], ptxBuf1LineSize[i]);
+          }
+          ptxBuf1Size = 0;
+          ptxBuf1Full = false;
         }
-        ptxBuf1Size = 0;
-        ptxBuf1Full = false;
-      }
-      
-      // if buffer 2 is full, send all of its lines
-      if( ptxBuf2Full ){
-        for( i=0; i<ptxBuf2Size; i++ ){
-          SERIAL_PI.write(ptxBuf2[i], ptxBuf2LineSize[i]);
+        
+        // if buffer 2 is full, send all of its lines
+        if( ptxBuf2Full ){
+          for( i=0; i<ptxBuf2Size; i++ ){
+            SERIAL_PI.write(ptxBuf2[i], ptxBuf2LineSize[i]);
+          }
+          ptxBuf2Size = 0;
+          ptxBuf2Full = false;
         }
-        ptxBuf2Size = 0;
-        ptxBuf2Full = false;
+
+        xSemaphoreGive( piBufSem );
       }
     }
 
@@ -380,6 +391,18 @@ void dispatchCommand(int senderId, cmd_t command)
     xSemaphoreGive( dbSem );
   }
   #endif
+
+  if( command.cmdid == CMDID_IR_BP ){
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("CMD: asking the PI to build a packet...");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+
+    writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
+
+  }
 
   
 }
@@ -458,7 +481,7 @@ static void radThread(void *pvParameters)
           memcpy(radioRxBuf, radio.DATA, radio.DATALEN);
           radioRxBufSize += radio.DATALEN;
 
-          #ifdef DEBUG_RADIO
+          #ifdef DEBUG
           if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
             Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
             for (byte i = 0; i < radio.DATALEN; i++)
@@ -481,9 +504,7 @@ static void radThread(void *pvParameters)
           #endif
         }
           
-        }
-        
-      
+      }
       xSemaphoreGive( sdSem );
     } // end sd access
 
@@ -495,7 +516,7 @@ static void radThread(void *pvParameters)
     // that the first byte of the rx buffer is always a packet ID byte
     if( radioRxBufSize > 0 ){
       
-      #ifdef DEBUG_RADIO
+      #ifdef DEBUG
       if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
         Serial.print("RADIO: got ");
         Serial.print(radioRxBufSize);
@@ -510,39 +531,85 @@ static void radThread(void *pvParameters)
       bool goon = true;
       int radrxbufidx = 0;
       while( goon ){
-        switch( radioRxBuf[radrxbufidx] ){
-          case PTYPE_CMD:
-            if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx)){
-              // short read, ditch it
-              // TODO: handle this better
-              radrxbufidx = radioRxBufSize;
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.println("RADIO:  less data in the radio buffer than expected");
-                xSemaphoreGive( dbSem );
-              }
-              #endif
-            } else {
-              memcpy(&inCmd, &radioRxBuf[radrxbufidx], sizeof(cmd_t));
-              radrxbufidx += sizeof(cmd_t);
-              dispatchCommand(fromNode, inCmd);
-            }
-            break;
-          default:
-            #ifdef DEBUG_RADIO
+
+        // receiving a command
+        if( radioRxBuf[radrxbufidx] == PTYPE_CMD ){
+
+          #ifdef DEBUG
+          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+            Serial.println("RADIO: got CMD packet");
+            xSemaphoreGive( dbSem );
+          }
+          #endif
+
+          if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx + 1)){
+            goon = false;
+
+            #ifdef DEBUG
             if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-              Serial.println("RADIO:  received unknown command byte: ");
-              Serial.print(radioRxBuf[radrxbufidx], HEX);
+              Serial.println("RADIO: setting goon false");
               xSemaphoreGive( dbSem );
             }
             #endif
+
             break;
+          } else {
+            memcpy(&inCmd, &radioRxBuf[radrxbufidx + 1], sizeof(cmd_t));
+            radrxbufidx += sizeof(cmd_t) + 1;
+
+            #ifdef DEBUG
+            if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+              Serial.print("RADIO: dispatching packet");
+              xSemaphoreGive( dbSem );
+            }
+            #endif
+
+            dispatchCommand(fromNode, inCmd);
+          }
+        } else {
+          radrxbufidx++;
+          #ifdef DEBUG
+          if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+            Serial.print("RADIO:  received unknown command byte: ");
+            Serial.println(radioRxBuf[radrxbufidx], HEX);
+            xSemaphoreGive( dbSem );
+          }
+          #endif
         }
+
         if( radrxbufidx == radioRxBufSize ){
           goon = false;
         }
       }
 
+      // if there was a fragment of a packet left in the buffer
+      // move the remaining bytes to the beginning of the buffer and
+      // set the buffer size accordingly
+      // ignore if a fragment is all thats left in the buffer
+      if( radrxbufidx < radioRxBufSize && radrxbufidx > 0){
+
+        // copy remaining bytes to temp buf then back to begining of rx buffer
+        memcpy(radioTmpBuf, &radioRxBuf[radrxbufidx], radioRxBufSize - radrxbufidx);
+        memcpy(radioRxBuf, radioTmpBuf, radioRxBufSize - radrxbufidx);
+        radioRxBufSize = radioRxBufSize - radrxbufidx;
+
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.println("RADIO:  copyied fragment");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      } else if( radrxbufidx == radioRxBufSize && radrxbufidx > 0 ){
+        // received data was complete packets, no fragments
+        radioRxBufSize = 0;
+      }
+
+      #ifdef DEBUG
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+        Serial.println("RADIO: end of got data");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
     }
 
     // now check if we have any packets in the TX buffer.

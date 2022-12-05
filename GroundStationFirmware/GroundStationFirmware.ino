@@ -45,7 +45,9 @@ SemaphoreHandle_t cmdSem; // semaphore to access the command structure we want t
 // variables for the debug radio
 uint8_t targetNode = NODE_ADDRESS_TESTNODE;
 static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
+static uint8_t radioTxBuf2[RADIO_RX_BUFSIZE]; // data 
 static uint16_t radioTxBufSize = 0;
+static uint16_t radioTxBufSize2 = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
 static uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
@@ -99,13 +101,15 @@ void cmd_build_packet(SerialCommands* sender)
   }
   #endif
 
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_IR_BP; // build packet command ID
+
   // get semaphore access to command struct
   if ( xSemaphoreTake( cmdSem, ( TickType_t ) 500 ) == pdTRUE ) {
-
-    // set all entries to zero (this sets argc to zero)
-    memset(&cmdToSend, 0, sizeof(cmd_t));
-    cmdToSend.cmdid = CMDID_IR_BP; // build packet command ID
-    newCmdToSend = true;
+    radioTxBuf[radioTxBufSize++] = PTYPE_CMD;
+    memcpy(&radioTxBuf[radioTxBufSize], &cmdToSend, sizeof(cmd_t));
+    radioTxBufSize += sizeof(cmd_t);
     xSemaphoreGive( cmdSem );
   }
 }
@@ -120,13 +124,15 @@ void cmd_send_packet(SerialCommands* sender)
   }
   #endif
 
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_IR_SP; // send packet command ID
+
   // get semaphore access to command struct
   if ( xSemaphoreTake( cmdSem, ( TickType_t ) 500 ) == pdTRUE ) {
-
-    // set all entries to zero (this sets argc to zero)
-    memset(&cmdToSend, 0, sizeof(cmd_t));
-    cmdToSend.cmdid = CMDID_IR_SP; // send packet command ID
-    newCmdToSend = true;
+    radioTxBuf[radioTxBufSize++] = PTYPE_CMD;
+    memcpy(&radioTxBuf[radioTxBufSize], &cmdToSend, sizeof(cmd_t));
+    radioTxBufSize += sizeof(cmd_t);
     xSemaphoreGive( cmdSem );
   }
 
@@ -264,10 +270,10 @@ void radioThread( void *param ){
         // }
         // #endif
 
+        // receiving a command
         if( radioRxBuf[radrxbufidx] == PTYPE_CMD ){
           if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx + 1)){
             goon = false;
-            break;
           } else {
             memcpy(&inCmd, &radioRxBuf[++radrxbufidx], sizeof(cmd_t));
             radrxbufidx += sizeof(cmd_t);
@@ -275,63 +281,79 @@ void radioThread( void *param ){
             dispatchCommand(fromNode, inCmd);
           }
         }
+
+        // TC data
         else if( radioRxBuf[radrxbufidx] == PTYPE_TC) {
           if( sizeof(tc_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_TC, &radioRxBuf[radrxbufidx+1], sizeof(tc_t));
             radrxbufidx += sizeof(tc_t) + 1;
           }
-        } else if(  radioRxBuf[radrxbufidx] == PTYPE_IMU ){
+        } 
+
+        // IMU data
+        else if(  radioRxBuf[radrxbufidx] == PTYPE_IMU ){
           if( sizeof(imu_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_IMU, &radioRxBuf[radrxbufidx+1], sizeof(imu_t));
             radrxbufidx += sizeof(imu_t) + 1;
           }
-        } else if ( radioRxBuf[radrxbufidx] == PTYPE_ACC ){
+        } 
+        
+        // high G accel data
+        else if ( radioRxBuf[radrxbufidx] == PTYPE_ACC ){
           if( sizeof(acc_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_ACC, &radioRxBuf[radrxbufidx+1], sizeof(acc_t));
             radrxbufidx += sizeof(acc_t) + 1;
           }
-        } else if ( radioRxBuf[radrxbufidx] == PTYPE_PRS ){
+        } 
+        
+        // pressure sensors
+        else if ( radioRxBuf[radrxbufidx] == PTYPE_PRS ){
           if( sizeof(prs_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_PRS, &radioRxBuf[radrxbufidx+1], sizeof(prs_t));
             radrxbufidx += sizeof(prs_t) + 1;
           }
-        } else if(  radioRxBuf[radrxbufidx] == PTYPE_GGA ){
+        } 
+        
+        // GGA gps data
+        else if(  radioRxBuf[radrxbufidx] == PTYPE_GGA ){
           if( sizeof(gga_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_GGA, &radioRxBuf[radrxbufidx+1], sizeof(gga_t));
             radrxbufidx += sizeof(gga_t) + 1;
           }
-        } else if(  radioRxBuf[radrxbufidx] == PTYPE_RMC ){
+        } 
+        
+        // rmc gps data
+        else if(  radioRxBuf[radrxbufidx] == PTYPE_RMC ){
           if( sizeof(rmc_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_RMC, &radioRxBuf[radrxbufidx+1], sizeof(rmc_t));
             radrxbufidx += sizeof(rmc_t) + 1;
           }
-        } else if(  radioRxBuf[radrxbufidx] == PTYPE_SPEC ){
+        } 
+        
+        // spectrometer data
+        else if(  radioRxBuf[radrxbufidx] == PTYPE_SPEC ){
           if( sizeof(spec_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
-            break;
           } else {
             writePacketAsPlaintext(printBuffer, PTYPE_SPEC, &radioRxBuf[radrxbufidx+1], sizeof(spec_t));
             radrxbufidx += sizeof(spec_t) + 1;
           }
-        } else {
+        } 
+
+        // uh oh we have probably lost track of where we are in the buffer
+        else {
           printBuffer[0] = 0;
           radrxbufidx++;
           #ifdef DEBUG_RADIO
@@ -342,6 +364,7 @@ void radioThread( void *param ){
           }
           #endif
         }
+        // end packet type decode
         
         // if we received a packet with printable data, and there is a non-null
         // string to print in the print buffer, then try to print over serial
@@ -391,23 +414,34 @@ void radioThread( void *param ){
     }
 
     // now check if we have any packets in the TX buffer.
+    // copy to our local buffer
+    if( xSemaphoreTake( cmdSem, (TickType_t) 1000 ) == pdTRUE ){
+      if( radioTxBufSize > 0 ){
+        radioTxBufSize2 = radioTxBufSize;
+        memcpy(radioTxBuf2, radioTxBuf, radioTxBufSize);
+        radioTxBufSize = 0;
+      }
+      xSemaphoreGive( cmdSem );
+    }
+
+    // now check if we have any packets in the TX buffer.
     // if there are packets of data in the Tx buffer 
     // the get the sd semaphore and try to send all that are in there
     // sending with retry can take time, so put the spi access semaphore inside the send loop
     txBufPos = 0;
     // need to get access to send buffer and SD buffer
-    if( radioTxBufSize > 0 ){
+    if( radioTxBufSize2 > 0 ){
       
       // we can only send 60 bytes at a time, so look through the buffer and send as much as possible 
       // at once until the buffer is empty
-      while (radioTxBufSize - txBufPos > 0)
+      while (radioTxBufSize2 - txBufPos > 0)
       {
         // first get access to SPI bus
         if ( xSemaphoreTake( spiSem, ( TickType_t ) 1000 ) == pdTRUE ) {
 
           // if there is more than 60 bytes in the send buffer, send 60 of it over and over
-          if( (radioTxBufSize - txBufPos) > 60 ){
-            if (radio.sendWithRetry(targetNode, &radioTxBuf[txBufPos], 60 )){
+          if( (radioTxBufSize2 - txBufPos) > 60 ){
+            if (radio.sendWithRetry(targetNode, &radioTxBuf2[txBufPos], 60 )){
               // success
               #ifdef DEBUG_RADIO
               if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -426,7 +460,7 @@ void radioThread( void *param ){
               #endif
             }
           } else { // else if there is 60 or less bytes in the send buffer, just send what is there
-            if (radio.sendWithRetry(targetNode, &radioTxBuf[txBufPos], (radioTxBufSize - txBufPos) )){
+            if (radio.sendWithRetry(targetNode, &radioTxBuf2[txBufPos], (radioTxBufSize2 - txBufPos) )){
               // send success
               #ifdef DEBUG_RADIO
               if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -434,7 +468,7 @@ void radioThread( void *param ){
                 xSemaphoreGive( dbSem );
               }
               #endif
-              txBufPos += (radioTxBufSize - txBufPos);
+              txBufPos += (radioTxBufSize2 - txBufPos);
             } else {
               // sending failed 
               #ifdef DEBUG_RADIO
@@ -445,14 +479,11 @@ void radioThread( void *param ){
               #endif          
             }
           }
-
-          
-
           xSemaphoreGive( spiSem );
         } // end access to the SPI bus
       }
 
-      radioTxBufSize = 0;
+      radioTxBufSize2 = 0;
     } // end if radioTxBufSize > 0
   
     myDelayMs(10);
