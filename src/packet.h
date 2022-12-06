@@ -16,7 +16,7 @@
 #define PTYPE_QUAT 17
 #define PTYPE_PACKET 99 // compressed packet written to logfile
 
-#define PTYPE_PACKET_REQUEST 0x88
+#define PTYPE_PACKET_REQUEST 8 // sent from flight computer to nano pi to request a packet
 
 #define MAX_CMD_ARGS 10
 
@@ -271,8 +271,7 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
 
   // packet request to pi
   else if( ptype == PTYPE_PACKET_REQUEST ){
-    dest[0] = ptype;
-    ret = 1;
+    ret = sprintf(dest, "%d\n", ptype);
   } 
   
   // unknown 
