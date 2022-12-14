@@ -22,11 +22,11 @@
 
 #define RAD2DEG 57.2957795131
 
-#define TIME_SCALE 100 // ticks per time unit
+#define TIME_SCALE 100.0f // ticks per time unit
 
-#define UNIT_SCALE 10 // multiplier applied
+#define UNIT_SCALE 10.0f // multiplier applied
 
-#define PRS_UNIT_SCALE 100 // multiplier for pressure data
+#define PRS_UNIT_SCALE 100.0f // multiplier for pressure data
 
 
 #define FREQUENCY     RF69_915MHZ

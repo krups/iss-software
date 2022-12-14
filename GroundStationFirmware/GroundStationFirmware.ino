@@ -53,7 +53,7 @@ static uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, false, &SPI); // debug radio object
 
-char printBuffer[600];
+char printBuffer[1000];
 
 // for printing data to serial
 StaticJsonDocument<1024> doc;
@@ -287,7 +287,7 @@ void radioThread( void *param ){
           if( sizeof(tc_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_TC, &radioRxBuf[radrxbufidx+1], sizeof(tc_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_TC, &radioRxBuf[radrxbufidx+1], sizeof(tc_t), true);
             radrxbufidx += sizeof(tc_t) + 1;
           }
         } 
@@ -297,7 +297,7 @@ void radioThread( void *param ){
           if( sizeof(imu_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_IMU, &radioRxBuf[radrxbufidx+1], sizeof(imu_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_IMU, &radioRxBuf[radrxbufidx+1], sizeof(imu_t), true);
             radrxbufidx += sizeof(imu_t) + 1;
           }
         } 
@@ -307,7 +307,7 @@ void radioThread( void *param ){
           if( sizeof(acc_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_ACC, &radioRxBuf[radrxbufidx+1], sizeof(acc_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_ACC, &radioRxBuf[radrxbufidx+1], sizeof(acc_t), true);
             radrxbufidx += sizeof(acc_t) + 1;
           }
         } 
@@ -317,7 +317,7 @@ void radioThread( void *param ){
           if( sizeof(prs_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_PRS, &radioRxBuf[radrxbufidx+1], sizeof(prs_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_PRS, &radioRxBuf[radrxbufidx+1], sizeof(prs_t), true);
             radrxbufidx += sizeof(prs_t) + 1;
           }
         } 
@@ -327,7 +327,7 @@ void radioThread( void *param ){
           if( sizeof(gga_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_GGA, &radioRxBuf[radrxbufidx+1], sizeof(gga_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_GGA, &radioRxBuf[radrxbufidx+1], sizeof(gga_t) ,true);
             radrxbufidx += sizeof(gga_t) + 1;
           }
         } 
@@ -337,7 +337,7 @@ void radioThread( void *param ){
           if( sizeof(rmc_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_RMC, &radioRxBuf[radrxbufidx+1], sizeof(rmc_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_RMC, &radioRxBuf[radrxbufidx+1], sizeof(rmc_t), true);
             radrxbufidx += sizeof(rmc_t) + 1;
           }
         } 
@@ -347,7 +347,7 @@ void radioThread( void *param ){
           if( sizeof(spec_t) > (radioRxBufSize - radrxbufidx + 1)) {
             goon = false;
           } else {
-            writePacketAsPlaintext(printBuffer, PTYPE_SPEC, &radioRxBuf[radrxbufidx+1], sizeof(spec_t));
+            writePacketAsPlaintext(printBuffer, PTYPE_SPEC, &radioRxBuf[radrxbufidx+1], sizeof(spec_t), true);
             radrxbufidx += sizeof(spec_t) + 1;
           }
         } 
@@ -371,7 +371,6 @@ void radioThread( void *param ){
         if( printBuffer[0] > 0){
           #ifdef DEBUG
           if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-            Serial.print("DATA: ");
             Serial.write(printBuffer);
             xSemaphoreGive( dbSem );
           }
