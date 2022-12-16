@@ -17,12 +17,6 @@
 #include <RFM69.h>
 #include <SD.h>
 
-#define DEBUG 1
-#ifdef DEBUG
-  #define DEBUG_RADIO 1
-  #define DEBUG_SEND 1
-#endif
-
 //#define PRINT_RX_STATS 1
 
 #include "src/delay_helpers.h" // rtos delay helpers
@@ -30,6 +24,17 @@
 #include "src/packet.h"        // data packet defs
 #include "src/commands.h"      // command spec
 #include "pins.h"                  // groundstation system pinouts
+
+#undef DEBUG
+#undef DEBUG_RADIO
+
+//#define DEBUG_RADIO
+
+//#define DEBUG 1
+#ifdef DEBUG
+  #define DEBUG_RADIO 1
+  #define DEBUG_SEND 1
+#endif
 
 #define PC_SERIAL Serial // PC connection to send plain text over
 
@@ -211,7 +216,7 @@ void radioThread( void *param ){
           // #endif
 
         if( (radioRxBufSize + radio.DATALEN) < RADIO_RX_BUFSIZE) {
-          memcpy(radioRxBuf, radio.DATA, radio.DATALEN);
+          memcpy(&radioRxBuf[rxBufPos], radio.DATA, radio.DATALEN);
           radioRxBufSize += radio.DATALEN;
 
           // #ifdef DEBUG_RADIO
@@ -277,8 +282,8 @@ void radioThread( void *param ){
           } else {
             memcpy(&inCmd, &radioRxBuf[++radrxbufidx], sizeof(cmd_t));
             radrxbufidx += sizeof(cmd_t);
-            sprintf(printBuffer, "RAD: got command\n");
-            dispatchCommand(fromNode, inCmd);
+            //sprintf(printBuffer, "RAD: got command\n");
+            //dispatchCommand(fromNode, inCmd);
           }
         }
 
@@ -352,10 +357,21 @@ void radioThread( void *param ){
           }
         } 
 
+        // quat data
+        else if(  radioRxBuf[radrxbufidx] == PTYPE_QUAT ){
+          if( sizeof(quat_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_QUAT, &radioRxBuf[radrxbufidx+1], sizeof(quat_t), true);
+            radrxbufidx += sizeof(quat_t) + 1;
+          }
+        } 
+
         // uh oh we have probably lost track of where we are in the buffer
         else {
           printBuffer[0] = 0;
-          radrxbufidx++;
+          //radrxbufidx++;
+          goon = false;
           #ifdef DEBUG_RADIO
           if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
             Serial.println("RADIO:  received unknown command byte: ");
@@ -369,12 +385,13 @@ void radioThread( void *param ){
         // if we received a packet with printable data, and there is a non-null
         // string to print in the print buffer, then try to print over serial
         if( printBuffer[0] > 0){
-          #ifdef DEBUG
+          // always print received data
+          //#ifdef DEBUG
           if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
             Serial.write(printBuffer);
             xSemaphoreGive( dbSem );
           }
-          #endif
+          //#endif
         }
 
         if( radrxbufidx == radioRxBufSize ){
@@ -392,6 +409,7 @@ void radioThread( void *param ){
         memcpy(radioTmpBuf, &radioRxBuf[radrxbufidx], radioRxBufSize - radrxbufidx);
         memcpy(radioRxBuf, radioTmpBuf, radioRxBufSize - radrxbufidx);
         radioRxBufSize = radioRxBufSize - radrxbufidx;
+        rxBufPos = radioRxBufSize;
 
         #ifdef DEBUG_RADIO
         if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -401,7 +419,24 @@ void radioThread( void *param ){
         #endif
       } else if( radrxbufidx == radioRxBufSize && radrxbufidx > 0 ){
         // received data was complete packets, no fragments
+        rxBufPos = 0;
         radioRxBufSize = 0;
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.println("RADIO:  complete transfer");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      } else {
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.println("RADIO:  Unhandled exception");
+          Serial.print("radrxbufidx: "); Serial.println(radrxbufidx);
+          Serial.print("radioRxBufSize: "); Serial.println(radioRxBufSize);
+          Serial.print("rxBufPos: "); Serial.println(rxBufPos);
+          xSemaphoreGive( dbSem );
+        }
+        #endif
       }
 
       // #ifdef DEBUG_RADIO
@@ -522,7 +557,7 @@ void setup() {
   digitalWrite(PIN_RADIO_RESET, LOW);
   delay(10);
 
-  delay(7000);
+  delay(3000);
   
   #if DEBUG
   PC_SERIAL.println("Starting...");

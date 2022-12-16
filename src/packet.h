@@ -56,7 +56,7 @@ struct quat_t {
   // if  ok & 0xF0 then high g accel booted
   // if ok & 0x0F then imu booted
   uint16_t ok;
-  float data[4]; // in 10 * m/s/s and 10 * deg/s
+  float data[4]; // order is real (r), i, j, k in the data array
 }; // 20 bytes
 
 // type PTYPE_TMP
@@ -257,8 +257,8 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     dtostrf( (float)prs.data[0] / PRS_UNIT_SCALE, 7, 5, p1Buf );
     dtostrf( (float)prs.data[1] / PRS_UNIT_SCALE, 7, 5, p2Buf );
     dtostrf( (float)prs.data[2] / PRS_UNIT_SCALE, 7, 5, p3Buf );
-    dtostrf( (float)prs.data[2] / PRS_UNIT_SCALE, 7, 5, p4Buf );
-    dtostrf( (float)prs.data[2] / PRS_UNIT_SCALE, 7, 5, p5Buf );
+    dtostrf( (float)prs.data[3] / PRS_UNIT_SCALE, 7, 5, p4Buf );
+    dtostrf( (float)prs.data[4] / PRS_UNIT_SCALE, 7, 5, p5Buf );
 
     if( json ){
       ret = sprintf(dest,
@@ -293,18 +293,18 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
 
     // TODO: fix timestamps in printed string
     if( json ){
-      ret = sprintf(dest,
-                    "{\"time\": %d, \"lat\": %s, \"lon\": %s, \"alt\": %s, \"hdop\": %s, \"utc\": %d:%d:%d.%d}\n",
-                    gga.t, // system time
-                    latBuf,
-                    lonBuf,
-                    altBuf,
-                    hdopBuf,
-                    gga.time[0],
-                    gga.time[1],
-                    gga.time[2],
-                    gga.time[3]
-);
+      ret = 0;
+      // ret = sprintf(dest,
+      //               "{\"time\": %d, \"lat\": %s, \"lon\": %s, \"alt\": %s, \"hdop\": %s, \"utc\": %d:%d:%d.%d}\n",
+      //               gga.t, // system time
+      //               latBuf,
+      //               lonBuf,
+      //               altBuf,
+      //               hdopBuf,
+      //               gga.time[0],
+      //               gga.time[1],
+      //               gga.time[2],
+      //               gga.time[3]);
     } else {
       ret = sprintf(dest,
                     "%d, %d, %d,%d,%d,%d, %s, %s, %s, %s\n",
@@ -331,8 +331,10 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     dtostrf( rmc.speed, 7, 5, spdBuf );
     dtostrf( rmc.course, 7, 5, crsBuf );
 
-    // TODO: fix timestamps in printed string
-    ret = sprintf(dest,
+    if ( json ){
+      ret = 0; 
+    } else {
+      ret = sprintf(dest,
                   "%d, %d, %d,%d,%d,%d, %s, %s, %s, %s\n",
                   ptype,
                   rmc.t, // system time
@@ -344,26 +346,62 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
                   lonBuf,
                   spdBuf,
                   crsBuf);
+    }
+    
 
   } 
   
+  // quaternion orientation
+  else if( ptype == PTYPE_QUAT ){
+    quat_t quat;
+    memcpy(&quat, data, size);
+    char q0Buf[10], q1Buf[10], q2Buf[10], q3Buf[10];
+    dtostrf( quat.data[0], 7, 5, q0Buf ); // w (real)
+    dtostrf( quat.data[1], 7, 5, q1Buf ); // i 
+    dtostrf( quat.data[2], 7, 5, q2Buf ); // j
+    dtostrf( quat.data[3], 7, 5, q3Buf ); // k
+
+    if( json ){
+      ret = sprintf(dest,
+              "{\"id\": \"quat_x\", \"value\": %s}\n{\"id\": \"quat_y\", \"value\": %s}\n{\"id\": \"quat_z\", \"value\": %s}\n{\"id\": \"quat_w\", \"value\": %s}\n", 
+              q1Buf,
+              q2Buf,
+              q3Buf,
+              q0Buf);
+    } else {
+      ret = sprintf(dest, "%d, %s, %s, %s, %s\n", quat.t, q0Buf, q1Buf, q2Buf, q3Buf);
+    }
+  } 
+
   // spectrometer
   else if( ptype == PTYPE_SPEC ){
     spec_t spec;
     memcpy(&spec, data, size);
-    ret = sprintf(dest,
-            "SPEC: TBD\n");
+    if( json ){
+      ret = 0;
+    } else {
+      ret = sprintf(dest,
+              "SPEC: TBD\n");
+    }
   } 
 
   // packet request to pi
   else if( ptype == PTYPE_PACKET_REQUEST ){
-    ret = sprintf(dest, "%d\n", ptype);
+    if( json ){
+      ret = 0;
+    } else {
+      ret = sprintf(dest, "%d\n", ptype);
+    }
   } 
   
   // unknown 
   else {
-    ret = sprintf(dest,
+    if( json ){
+      ret = 0;
+    } else {
+      ret = sprintf(dest,
             "Unknown packet type!\n");
+    }
   }
 
   // return number of bytes written to buffer

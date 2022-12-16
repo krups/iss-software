@@ -11,9 +11,9 @@
   //#define DEBUG_IRD 1
   #define DEBUG_LOG 1
   //#define DEBUG_TICK 1
-  //#define DEBUG_RADIO 1
+  #define DEBUG_RADIO 1
   //#define DEBUG_PRESSURE 1
-  //#define DEBUG_SPEC 1
+  #define DEBUG_SPEC 1
   //#define DEBUG_IMU 1
   //#define DEBUG_TC
   //#define DEBUG_TPMS_TRANSFER
@@ -47,7 +47,7 @@
 
 #define TC_SAMPLE_PERIOD_MS   1000
 #define SPEC_SAMPLE_PERIOD_MS 1000
-#define IMU_SAMPLE_PERIOD_MS  1000
+#define IMU_SAMPLE_PERIOD_MS  500
 #define PRS_SAMPLE_PERIOS_MS  1000
 
 // TODO: update to BSMS language

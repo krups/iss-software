@@ -614,7 +614,7 @@ static void radThread(void *pvParameters)
 
     // now check if we have any packets in the TX buffer.
     // copy to our local buffer
-    if( xSemaphoreTake( radBufSem, (TickType_t) 1000 ) == pdTRUE ){
+    if( xSemaphoreTake( radBufSem, (TickType_t) 200 ) == pdTRUE ){
       if( radioTxBufSize > 0 ){
         radioTxBufSize2 = radioTxBufSize;
         memcpy(radioTxBuf2, radioTxBuf, radioTxBufSize);
@@ -654,7 +654,7 @@ static void radThread(void *pvParameters)
         // first get access to SPI bus
         if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
           // if there is more than 60 bytes in the send buffer, send 60 of it over and over
-          if( (radioTxBufSize2 - txBufPos) > 60 ){
+          if( (radioTxBufSize2 - txBufPos) >= 60 ){
             //radio.send((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60, true);
             //txBufPos += 60;
             if (radio.sendWithRetry((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60)){
@@ -702,7 +702,7 @@ static void radThread(void *pvParameters)
       radioTxBufSize2 = 0;
     } // end if radioTxBufSize > 0
 
-    myDelayMs(10);
+    myDelayMs(100);
   }
 
   vTaskDelete( NULL );
@@ -977,11 +977,12 @@ static void gpsThread( void *pvParameters )
 static void imuThread( void *pvParameters )
 {
   bool bno_ok = false, highg_ok = false, 
-       bno_accel_init = false, bno_gyro_init = false;
+       bno_accel_init = false, bno_gyro_init = false, bno_quat_init = false;
   sensors_event_t h3event; // struct to hold high g accel data
   sh2_SensorValue_t bnoValue; // struct to hold low g imu data
   acc_t accData;
   imu_t imuData;
+  quat_t quatData;
   // TODO: implement absolute orientation logging
 
   // unsigned long sample_period_ms = 20;
@@ -1000,6 +1001,12 @@ static void imuThread( void *pvParameters )
   imuData.data[4] = 0;
   imuData.data[5] = 0;
 
+  quatData.t = 0;
+  quatData.data[0] = 1.0; // r component
+  quatData.data[1] = 0.0; // i ( all floats )
+  quatData.data[2] = 0.0; // j 
+  quatData.data[3] = 0.0; // k
+
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -1017,19 +1024,18 @@ static void imuThread( void *pvParameters )
 
     //bno08x.enableReport(SH2_ACCELEROMETER);
     //bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED);
-    //bno08x.enableReport(SH2_GAME_ROTATION_VECTOR);
-
+    if( bno08x.enableReport(SH2_ARVR_STABILIZED_RV)) {
+      bno_quat_init = true;
+    }
+    // if (bno08x.enableReport(SH2_GAME_ROTATION_VECTOR)) {
+    //   bno_quat_init = true;
+    // }
     if (bno08x.enableReport(SH2_ACCELEROMETER)) {
-      //Serial.println("Could not enable raw accelerometer");
       bno_accel_init = true;
     }
     if (bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED)) {
-      //Serial.println("Could not enable raw gyroscope");
       bno_gyro_init = true;
     }
-    // if (!bno08x.enableReport(SH2_RAW_MAGNETOMETER)) {
-    //   Serial.println("Could not enable raw magnetometer");
-    // }
    
     // init H3LIS100 accelerometer
     if( highg.begin() ){
@@ -1047,6 +1053,8 @@ static void imuThread( void *pvParameters )
     Serial.print(bno_accel_init);
     Serial.print(", BNO gyro init: ");
     Serial.print(bno_gyro_init);
+    Serial.print(", BNO quat init: ");
+    Serial.print(bno_quat_init);
     Serial.print(", init H3LIS: ");
     Serial.println(highg_ok);
     xSemaphoreGive( dbSem );
@@ -1054,7 +1062,7 @@ static void imuThread( void *pvParameters )
   #endif
 
   while(1) {
-    myDelayMs(50);
+    myDelayMs(25);
 
     // #ifdef DEBUG_TICK
     // if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -1065,7 +1073,7 @@ static void imuThread( void *pvParameters )
 
     // try to acquire lock on i2c bus and take measurements
     // from the IMU and high g accelerometer
-    if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 50 ) == pdTRUE ) {
+    if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 10 ) == pdTRUE ) {
       
       // if (bno08x.wasReset()) {
       //   Serial.print("sensor was reset ");
@@ -1100,6 +1108,20 @@ static void imuThread( void *pvParameters )
         imuData.data[4] = (int16_t) (bnoValue.un.gyroscope.y * RAD2DEG * UNIT_SCALE);
         imuData.data[5] = (int16_t) (bnoValue.un.gyroscope.z * RAD2DEG * UNIT_SCALE);
         break;
+      case SH2_GEOMAGNETIC_ROTATION_VECTOR:
+        // store quat data
+        quatData.data[0] = bnoValue.un.gameRotationVector.real;
+        quatData.data[1] = bnoValue.un.gameRotationVector.i;
+        quatData.data[2] = bnoValue.un.gameRotationVector.j;
+        quatData.data[3] = bnoValue.un.gameRotationVector.k; 
+        break;
+      case SH2_ARVR_STABILIZED_RV:
+      // store quat data
+        quatData.data[0] = bnoValue.un.arvrStabilizedRV.real;
+        quatData.data[1] = bnoValue.un.arvrStabilizedRV.i;
+        quatData.data[2] = bnoValue.un.arvrStabilizedRV.j;
+        quatData.data[3] = bnoValue.un.arvrStabilizedRV.k; 
+        break;
     }
 
     last_sample_time = xTaskGetTickCount();
@@ -1111,6 +1133,8 @@ static void imuThread( void *pvParameters )
     accData.data[0] = h3event.acceleration.x * UNIT_SCALE;
     accData.data[1] = h3event.acceleration.y * UNIT_SCALE;
     accData.data[2] = h3event.acceleration.z * UNIT_SCALE;
+
+    // quat data not scaled
 
     // report sensor init status
     imuData.ok = 0;
@@ -1131,6 +1155,7 @@ static void imuThread( void *pvParameters )
       // try to write the imu and acc structs to the SD log buffer
       writeToLogBuf(PTYPE_IMU, &imuData, sizeof(imu_t));
       writeToLogBuf(PTYPE_ACC, &accData, sizeof(acc_t));
+      writeToLogBuf(PTYPE_QUAT, &quatData, sizeof(quat_t));
 
       // #ifdef DEBUG
       // if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -1142,6 +1167,7 @@ static void imuThread( void *pvParameters )
       // try to write these data to the pi buffer lines to be sent out over serial
       writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t));
       writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t));
+      //writeToPtxBuf(PTYPE_QUAT, &quatData, sizeof(quat_t));
 
       // #ifdef DEBUG
       // if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -1155,6 +1181,7 @@ static void imuThread( void *pvParameters )
       //while( writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
       writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t));
       writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t));
+      writeToRadBuf(PTYPE_QUAT, &quatData, sizeof(quat_t));
     }
 
     #ifdef DEBUG_IMU
@@ -1616,12 +1643,12 @@ static void packetBuildThread( void * pvParameters )
   }
   #endif
 
-  myDelayMs(25000);
+  myDelayMs(30000);
 
   while(1) {
     input_size = 0;
     actual_read = 0;
-    packetsToSample = 4; // start with 5, var gets incremented before first use
+    packetsToSample = 5; // start with 5, var gets incremented before first use
     bytesRead = 0;
 
 
@@ -1629,8 +1656,10 @@ static void packetBuildThread( void * pvParameters )
     // as much TC data as possible so we dont start from empty buffer each time
     if( ( temp = sample_datfile(PTYPE_GGA, 1, uc_buf) ) != ERR_SD_BUSY)
       bytesRead = temp;
+    myDelayMs(10);
     if( ( temp = sample_datfile(PTYPE_RMC, 1, &uc_buf[bytesRead] )) != ERR_SD_BUSY )
       bytesRead += temp;
+    myDelayMs(10);
     /*if( ( temp = sample_datfile(PTYPE_IMU, 1, &uc_buf[bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
     if( ( temp = sample_datfile(PTYPE_ACC, 1, &uc_buf[bytesRead])) != ERR_SD_BUSY )
@@ -1655,17 +1684,25 @@ static void packetBuildThread( void * pvParameters )
     // sample the datfile, requesting packetsToSample samples of type TC data
     if( (temp = sample_datfile(PTYPE_TC,   packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
-
+    
+    myDelayMs(10);
     // sample some IMU data, placing it in the uc buffer after the previous reading
     if( (temp = sample_datfile(PTYPE_IMU,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
-
+   
+    myDelayMs(10);
     // sample some ACC data
     if( (temp = sample_datfile(PTYPE_ACC,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
 
+    myDelayMs(10);
     // sample some spectro data
     if( (temp = sample_datfile(PTYPE_SPEC, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+      bytesRead += temp;
+
+    myDelayMs(10);
+    // sample some spectro data
+    if( (temp = sample_datfile(PTYPE_PRS, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
 
     // overall size in bytes of our data packet, uncompressed

@@ -76,12 +76,14 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
 
         // calculate number of bytes until next packet
         if     ( type==PTYPE_TC   ) offset = sizeof (tc_t);
+        else if( type==PTYPE_PRS  ) offset = sizeof (prs_t);
         else if( type==PTYPE_SPEC ) offset = sizeof (spec_t);
         else if( type==PTYPE_ACC  ) offset = sizeof (acc_t);
         else if( type==PTYPE_IMU  ) offset = sizeof (imu_t);
         else if( type==PTYPE_GGA  ) offset = sizeof (gga_t);
         else if( type==PTYPE_RMC  ) offset = sizeof (rmc_t);
         else if( type==PTYPE_PACKET ) offset = sizeof (packet_t);
+        else if( type==PTYPE_QUAT ) offset = sizeof (quat_t);
         else break; // we are lost, break so we seek to next block
 
 //        #if DEBUG
@@ -140,6 +142,7 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
 //  }
 //  #endif
 
+  myDelayMs(100); // wait a bit before going after the sd mutex again
 
   // now re-open the file and
   if ( xSemaphoreTake( sdSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -165,12 +168,13 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
 
         // calculate number of bytes until next packet
         if     ( type==PTYPE_TC   ) offset = sizeof (tc_t);
+        else if( type==PTYPE_PRS  ) offset = sizeof (prs_t);
         else if( type==PTYPE_SPEC ) offset = sizeof (spec_t);
         else if( type==PTYPE_ACC  ) offset = sizeof (acc_t);
         else if( type==PTYPE_IMU  ) offset = sizeof (imu_t);
         else if( type==PTYPE_GGA  ) offset = sizeof (gga_t);
         else if( type==PTYPE_RMC  ) offset = sizeof (rmc_t);
-        //else if( type==PTYPE_BAR  ) offset = sizeof (bar_t);
+        else if( type==PTYPE_QUAT ) offset = sizeof (quat_t);
         else if( type==PTYPE_PACKET ) offset = sizeof (packet_t);
         else break; // we are lost, break so we seek to next block
 
