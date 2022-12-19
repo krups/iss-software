@@ -18,13 +18,12 @@
 
 #define PTYPE_PACKET_REQUEST 8 // sent from flight computer to nano pi to request a packet
 
-#define MAX_CMD_ARGS 10
+#define CMD_PAYLOAD_BYTES 11
 
 // type PTYPE_CMD
 struct cmd_t {
   uint8_t cmdid;
-  uint8_t argc;
-  uint8_t argv[MAX_CMD_ARGS];
+  uint8_t data[CMD_PAYLOAD_BYTES];
 };
 
 // type PTYPE_PACKET

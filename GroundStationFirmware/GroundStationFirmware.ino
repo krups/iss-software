@@ -29,6 +29,7 @@
 #undef DEBUG_RADIO
 
 //#define DEBUG_RADIO
+//#define DEBUG 1
 
 //#define DEBUG 1
 #ifdef DEBUG
@@ -72,6 +73,16 @@ char serial_command_buffer_[32]; // max received command length
 SerialCommands serial_commands_(&PC_SERIAL, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
 
 
+void writeCommandToRadBuf(cmd_t &command) {
+  // get semaphore access to command struct
+  if ( xSemaphoreTake( cmdSem, ( TickType_t ) 500 ) == pdTRUE ) {
+    radioTxBuf[radioTxBufSize++] = PTYPE_CMD;
+    memcpy(&radioTxBuf[radioTxBufSize], &command, sizeof(cmd_t));
+    radioTxBufSize += sizeof(cmd_t);
+    xSemaphoreGive( cmdSem );
+  }
+}
+
 // serial command andler to set targe node address
 void cmd_set_target(SerialCommands* sender)
 {
@@ -87,13 +98,154 @@ void cmd_set_target(SerialCommands* sender)
     targetNode = NODE_ADDRESS_TESTNODE;
   }
 
-  #ifdef DEBUG_SEND
+  #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
     sender->GetSerial()->print("setting target node to ");
     sender->GetSerial()->println(targetNode);
     xSemaphoreGive( dbSem );
   }
   #endif 
+}
+
+void cmd_set_imu_period(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_SET_IMU_PER;
+
+  uint16_t *period = ((uint16_t*)(cmdToSend.data));
+
+  char* str = sender->Next();
+	if (str == NULL) {
+    // if no arg supplied, set target node to TESTNODE
+		*period = IMU_SAMPLE_PERIOD_MS;
+	}
+
+	if ( (*period = atoi(str)) == 0 ){
+    *period = IMU_SAMPLE_PERIOD_MS;
+  } 
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("setting imu sample period to ");
+    sender->GetSerial()->println(*period);
+    xSemaphoreGive( dbSem );
+  }
+  #endif 
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+
+void cmd_set_prs_period(SerialCommands* sender)
+{
+}
+
+void cmd_set_tc_period(SerialCommands* sender)
+{
+}
+
+void cmd_radlogontc(SerialCommands* sender)
+{
+}
+
+void cmd_radlogonimu(SerialCommands* sender)
+{
+}
+
+void cmd_radlogonprs(SerialCommands* sender)
+{
+}
+void cmd_radlogonacc(SerialCommands* sender)
+{
+}
+void cmd_radlogonquat(SerialCommands* sender)
+{
+}
+void cmd_radlogonrmc(SerialCommands* sender)
+{
+}
+void cmd_radlogongga(SerialCommands* sender)
+{
+}
+
+void cmd_radlogofftc(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_RADLOGOFF_TC;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("setting TC radio log OFF");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend); 
+}
+
+void cmd_radlogoffimu(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_RADLOGOFF_IMU;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->println("setting IMU radio log OFF\n");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+// set radio log of pressure data off
+void cmd_radlogoffprs(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_RADLOGOFF_PRS;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->println("setting PRS radio log OFF\n");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+
+void cmd_radlogoffacc(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_RADLOGOFF_ACC;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("setting ACC radio log OFF");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+
+void cmd_radlogoffquat(SerialCommands* sender)
+{
+}
+
+
+void cmd_radlogoffgga(SerialCommands* sender)
+{
+}
+void cmd_radlogoffrmc(SerialCommands* sender)
+{
 }
 
 // serial command handler for initiating a send of the C02 paraachute deploy
@@ -110,13 +262,7 @@ void cmd_build_packet(SerialCommands* sender)
   memset(&cmdToSend, 0, sizeof(cmd_t));
   cmdToSend.cmdid = CMDID_IR_BP; // build packet command ID
 
-  // get semaphore access to command struct
-  if ( xSemaphoreTake( cmdSem, ( TickType_t ) 500 ) == pdTRUE ) {
-    radioTxBuf[radioTxBufSize++] = PTYPE_CMD;
-    memcpy(&radioTxBuf[radioTxBufSize], &cmdToSend, sizeof(cmd_t));
-    radioTxBufSize += sizeof(cmd_t);
-    xSemaphoreGive( cmdSem );
-  }
+  writeCommandToRadBuf(cmdToSend);
 }
 
 // serial command handler for initiating a send of the pyro cutter firing
@@ -133,14 +279,7 @@ void cmd_send_packet(SerialCommands* sender)
   memset(&cmdToSend, 0, sizeof(cmd_t));
   cmdToSend.cmdid = CMDID_IR_SP; // send packet command ID
 
-  // get semaphore access to command struct
-  if ( xSemaphoreTake( cmdSem, ( TickType_t ) 500 ) == pdTRUE ) {
-    radioTxBuf[radioTxBufSize++] = PTYPE_CMD;
-    memcpy(&radioTxBuf[radioTxBufSize], &cmdToSend, sizeof(cmd_t));
-    radioTxBufSize += sizeof(cmd_t);
-    xSemaphoreGive( cmdSem );
-  }
-
+  writeCommandToRadBuf(cmdToSend);
 }
 
 
@@ -164,6 +303,25 @@ SerialCommand cmd_bp_("bp", cmd_build_packet); // build iridium packet
 SerialCommand cmd_sp_("sp", cmd_send_packet); // send iridium packet
 SerialCommand cmd_st_("target", cmd_set_target); // set target
 
+SerialCommand cmd_setimuper_("setimuperiod", cmd_set_imu_period);
+SerialCommand cmd_settcper_("settcperiod", cmd_set_tc_period);
+SerialCommand cmd_setprsper_("setprsperiod", cmd_set_prs_period);
+
+SerialCommand cmd_radlogontc_("radlogontc", cmd_radlogontc);
+SerialCommand cmd_radlogonimu_("radlogonimu", cmd_radlogonimu);
+SerialCommand cmd_radlogonacc_("radlogonacc", cmd_radlogonacc);
+SerialCommand cmd_radlogonprs_("radlogonprs", cmd_radlogonprs);
+SerialCommand cmd_radlogonquat_("radlogonquat", cmd_radlogonquat);
+SerialCommand cmd_radlogongga_("radlogongga", cmd_radlogongga);
+SerialCommand cmd_radlogonrmc_("radlogonrmc", cmd_radlogonrmc);
+
+SerialCommand cmd_radlogofftc_("radlogofftc", cmd_radlogofftc);
+SerialCommand cmd_radlogoffprs_("radlogoffprs", cmd_radlogoffprs);
+SerialCommand cmd_radlogoffimu_("radlogoffimu", cmd_radlogoffimu);
+SerialCommand cmd_radlogoffacc_("radlogoffacc", cmd_radlogoffacc);
+SerialCommand cmd_radlogoffquat_("radlogoffquat", cmd_radlogoffquat);
+SerialCommand cmd_radlogoffgga_("radlogoffgga", cmd_radlogoffgga);
+SerialCommand cmd_radlogoffrmc_("radlogoffrmc", cmd_radlogoffrmc);
 
 // dispacth a command received from the capsule (if any, could be used as ACK / heartbeat)
 void dispatchCommand(int senderId, cmd_t command )
@@ -370,7 +528,7 @@ void radioThread( void *param ){
         // uh oh we have probably lost track of where we are in the buffer
         else {
           printBuffer[0] = 0;
-          //radrxbufidx++;
+          radrxbufidx++;
           goon = false;
           #ifdef DEBUG_RADIO
           if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -532,9 +690,30 @@ void radioThread( void *param ){
 /// @param param 
 void serialThread( void *param ){
   serial_commands_.SetDefaultHandler(cmd_help);
-  serial_commands_.AddCommand(&cmd_bp_);
-  serial_commands_.AddCommand(&cmd_sp_);
-  serial_commands_.AddCommand(&cmd_st_);
+  serial_commands_.AddCommand(&cmd_bp_); // build iridium packet (deprecated)
+  serial_commands_.AddCommand(&cmd_sp_); // send iridium pack (deprecated)
+
+  serial_commands_.AddCommand(&cmd_st_); // set target node
+
+  serial_commands_.AddCommand(&cmd_setimuper_); // set imu sample period (ms)
+  serial_commands_.AddCommand(&cmd_settcper_);  // set tc sample period (ms)
+  serial_commands_.AddCommand(&cmd_setprsper_); // set pressure sample period (ms)
+
+  // commands to ENABLE radio logs of various telemtry
+  serial_commands_.AddCommand(&cmd_radlogonimu_);
+  serial_commands_.AddCommand(&cmd_radlogontc_);
+  serial_commands_.AddCommand(&cmd_radlogonprs_);
+  serial_commands_.AddCommand(&cmd_radlogonquat_);
+  serial_commands_.AddCommand(&cmd_radlogongga_);
+  serial_commands_.AddCommand(&cmd_radlogonrmc_);
+
+  // command to DISABLEradio logs of various telemetry
+  serial_commands_.AddCommand(&cmd_radlogoffimu_);
+  serial_commands_.AddCommand(&cmd_radlogofftc_);
+  serial_commands_.AddCommand(&cmd_radlogoffprs_);
+  serial_commands_.AddCommand(&cmd_radlogoffquat_);
+  serial_commands_.AddCommand(&cmd_radlogoffgga_);
+  serial_commands_.AddCommand(&cmd_radlogoffrmc_);
   
   while (1) {
     serial_commands_.ReadSerial();

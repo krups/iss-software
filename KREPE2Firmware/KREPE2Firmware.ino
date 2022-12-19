@@ -135,6 +135,10 @@ SemaphoreHandle_t ledSem; // neopixel semaphore
 SemaphoreHandle_t sdSem; // sd card access
 SemaphoreHandle_t piBufSem; // access to the pi send buffer
 
+// sample periods start off as preconfigured then slowly decrease after re-entry
+uint16_t imu_sample_period = IMU_SAMPLE_PERIOD_MS;
+uint16_t tc_sample_period = TC_SAMPLE_PERIOD_MS;
+uint16_t prs_sample_period = PRS_SAMPLE_PERIOS_MS;
 
 // buffers for the pi thread, containing recently created data to be sent to the Pi
 // each lines is a null terminated string to be filled by sprintf
@@ -164,6 +168,8 @@ static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data
 volatile uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
+volatile bool radlog_tc = true, radlog_prs = false, radlog_imu = true, radlog_quat = true;
+volatile bool radlog_gga = false, radlog_rmc = false, radlog_acc = false;
 #endif
 
 // debug message buffer
@@ -401,10 +407,190 @@ void dispatchCommand(int senderId, cmd_t command)
     #endif
 
     writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
-
   }
 
-  
+  if( command.cmdid == CMDID_SET_IMU_PER ){
+    imu_sample_period = *((uint16_t*)(&command.data));
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting IMU sample period to: ");
+      SERIAL.print(imu_sample_period);
+      SERIAL.println(" ms");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_SET_PRS_PER ){
+    prs_sample_period = *((uint16_t*)(&command.data));
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting PRS sample period to: ");
+      SERIAL.print(prs_sample_period);
+      SERIAL.println(" ms");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_SET_TC_PER ){
+    tc_sample_period = *((uint16_t*)(&command.data));
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting TC sample period to: ");
+      SERIAL.print(tc_sample_period);
+      SERIAL.println(" ms");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_TC ){
+    radlog_tc = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio TC log to: ");
+      SERIAL.println(radlog_tc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_TC ){
+    radlog_tc = false;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio TC log to: ");
+      SERIAL.println(radlog_tc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_PRS ){
+    radlog_prs = false;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio PRS log to: ");
+      SERIAL.println(radlog_prs);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_PRS ){
+    radlog_prs = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio PRS log to: ");
+      SERIAL.println(radlog_prs);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_QUAT ){
+    radlog_quat = false;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio QUAT log to: ");
+      SERIAL.println(radlog_quat);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_QUAT ){
+    radlog_quat = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio QUAT log to: ");
+      SERIAL.println(radlog_quat);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_IMU ){
+    radlog_imu = false;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio QUAT log to: ");
+      SERIAL.println(radlog_imu);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_IMU ){
+    radlog_imu = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio QUAT log to: ");
+      SERIAL.println(radlog_imu);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_GGA ){
+    radlog_gga = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio GGA log to: ");
+      SERIAL.println(radlog_gga);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_GGA ){
+    radlog_gga = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio GGA log to: ");
+      SERIAL.println(radlog_gga);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_RMC ){
+    radlog_rmc = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio RMC log to: ");
+      SERIAL.println(radlog_rmc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_RMC ){
+    radlog_rmc = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio RMC log to: ");
+      SERIAL.println(radlog_rmc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
 }
 
 
@@ -702,7 +888,7 @@ static void radThread(void *pvParameters)
       radioTxBufSize2 = 0;
     } // end if radioTxBufSize > 0
 
-    myDelayMs(100);
+    myDelayMs(50);
   }
 
   vTaskDelete( NULL );
@@ -765,7 +951,7 @@ void onRmcUpdate(nmea::RmcData const rmc)
 
   // try to write to radio debug buffer
   //while( writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
-  writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t));
+  if( radlog_rmc ) writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t));
 }
 
 // helper to print RMC messages to a stream
@@ -875,7 +1061,7 @@ void onGgaUpdate(nmea::GgaData const gga)
 
   // try to write to radio debug buffer
   //while( writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
-  writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t));
+  if( radlog_gga ) writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t));
 }
 
 // thread safe copy of src boolean to dest boolean.
@@ -1062,7 +1248,7 @@ static void imuThread( void *pvParameters )
   #endif
 
   while(1) {
-    myDelayMs(25);
+    myDelayMs(20);
 
     // #ifdef DEBUG_TICK
     // if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -1142,7 +1328,7 @@ static void imuThread( void *pvParameters )
     if( highg_ok ) imuData.ok |= 0xF0;
 
 
-    if( last_sample_time - lastlast_sample_time > (IMU_SAMPLE_PERIOD_MS - 100) ){
+    if( last_sample_time - lastlast_sample_time > (imu_sample_period) ){
       lastlast_sample_time = last_sample_time;
 
       // #ifdef DEBUG
@@ -1179,9 +1365,9 @@ static void imuThread( void *pvParameters )
       // try to write to radio debug buffer
       //while( writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t)) > 0);
       //while( writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t)) > 0);
-      writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t));
-      writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t));
-      writeToRadBuf(PTYPE_QUAT, &quatData, sizeof(quat_t));
+      if( radlog_imu ) writeToRadBuf(PTYPE_IMU, &imuData, sizeof(imu_t));
+      if( radlog_acc ) writeToRadBuf(PTYPE_ACC, &accData, sizeof(acc_t));
+      if( radlog_quat ) writeToRadBuf(PTYPE_QUAT, &quatData, sizeof(quat_t));
     }
 
     #ifdef DEBUG_IMU
@@ -1237,24 +1423,24 @@ static void prsThread( void *pvParameters )
 
   while(1) {
 
-    if( xTaskGetTickCount() - lastRead > PRS_SAMPLE_PERIOS_MS ) {  
+    if( xTaskGetTickCount() - lastRead > prs_sample_period ) {  
       lastRead = xTaskGetTickCount(); 
 
       if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
         select_i2cmux_channel(MUXCHAN_PS1);
-        myDelayUs(800);
+        myDelayUs(100);
         ps1.update();
         select_i2cmux_channel(MUXCHAN_PS2);
-        myDelayUs(800);
+        myDelayUs(100);
         ps2.update();
         select_i2cmux_channel(MUXCHAN_PS3);
-        myDelayUs(800);
+        myDelayUs(100);
         ps3.update();
         select_i2cmux_channel(MUXCHAN_PS4);
-        myDelayUs(800);
+        myDelayUs(100);
         ps4.update();
         select_i2cmux_channel(MUXCHAN_PS5);
-        myDelayUs(800);
+        myDelayUs(100);
         ps5.update();
         xSemaphoreGive( i2c1Sem ); 
       }
@@ -1292,7 +1478,7 @@ static void prsThread( void *pvParameters )
 
       // try to write to the radio send buffer
       //while( writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
-      writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t));
+      if( radlog_prs ) writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t));
 
       //myDelayMs(1000);
 
@@ -1749,6 +1935,7 @@ static void packetBuildThread( void * pvParameters )
   vTaskDelete( NULL );
 }
 
+
 // thread definition
 static void tcThread( void *pvParameters )
 {
@@ -1766,13 +1953,13 @@ static void tcThread( void *pvParameters )
   #endif
 
   while(1) {
-    if( xTaskGetTickCount() - lastRead > TC_SAMPLE_PERIOD_MS ){
+    if( xTaskGetTickCount() - lastRead > tc_sample_period ){
       lastRead = xTaskGetTickCount();
       //safeKick();
 
     #ifdef DEBUG_TICK
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-      SERIAL.println("TICK RADIO");
+      SERIAL.println("TICK TC");
       xSemaphoreGive( dbSem );
     }
     #endif
@@ -1786,7 +1973,8 @@ static void tcThread( void *pvParameters )
       // assign tc temps from MCP objects to local vars
       for( int i=0; i<NUM_TC_CHANNELS; i++ ){
         current_temps[i] = readMCP(i);
-        myDelayMs(1);
+        myDelayUs(100);
+        //myDelayMs(1);
         //safeKick();
       }
 
@@ -1819,7 +2007,7 @@ static void tcThread( void *pvParameters )
 
       // try to put in the radio send buffer
       //while( writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
-      writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t));
+      if( radlog_tc ) writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t));
       
     }
 
