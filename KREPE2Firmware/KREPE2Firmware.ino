@@ -401,13 +401,25 @@ void dispatchCommand(int senderId, cmd_t command)
   if( command.cmdid == CMDID_IR_BP ){
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-      SERIAL.println("CMD: asking the PI to build a packet...");
+      SERIAL.println("CMD: creating packet internally...");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_PI_BP ){
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("CMD: asking pi to build packet...");
       xSemaphoreGive( dbSem );
     }
     #endif
 
+    // put a request into the buffer to go out to the pi
     writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
   }
+
+  
 
   if( command.cmdid == CMDID_SET_IMU_PER ){
     imu_sample_period = *((uint16_t*)(&command.data));

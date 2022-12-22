@@ -48,7 +48,7 @@
 #define TC_SAMPLE_PERIOD_MS   1000
 #define SPEC_SAMPLE_PERIOD_MS 1000
 #define IMU_SAMPLE_PERIOD_MS  500
-#define PRS_SAMPLE_PERIOS_MS  1000
+#define PRS_SAMPLE_PERIOD_MS  1000
 
 // TODO: update to BSMS language
 // uncomment to enable spectrometer
