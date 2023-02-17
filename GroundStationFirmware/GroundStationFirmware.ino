@@ -31,13 +31,14 @@
 //#define DEBUG_RADIO
 //#define DEBUG 1
 
-//#define DEBUG 1
+#define DEBUG 1
 #ifdef DEBUG
   #define DEBUG_RADIO 1
   #define DEBUG_SEND 1
 #endif
 
 #define PC_SERIAL Serial // PC connection to send plain text over
+#define SERIAL Serial
 
 // freertos task handles
 TaskHandle_t Handle_radTask;
@@ -81,6 +82,91 @@ void writeCommandToRadBuf(cmd_t &command) {
     radioTxBufSize += sizeof(cmd_t);
     xSemaphoreGive( cmdSem );
   }
+}
+
+// serial command handler to list files in sd card
+void cmd_ls(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_LS;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending LS command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+// serial command handler to list files in sd card
+void cmd_5von(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_5VPWR_ON;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending 5v power ON command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+// serial command handler to list files in sd card
+void cmd_5voff(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_5VPWR_OFF;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending 5V power off command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+// serial command handler to list files in sd card
+void cmd_3von(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_3VPWR_ON;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending 3v3 power ON command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+// serial command handler to list files in sd card
+void cmd_3voff(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_3VPWR_OFF;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending 3V3 power off command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
 }
 
 // serial command andler to set targe node address
@@ -509,30 +595,37 @@ SerialCommand cmd_st_("target", cmd_set_target); // set target node to send comm
 
 
 // handle commands that go to the capsule
-SerialCommand cmd_irbp_("irbp", cmd_pibuild_packet); // build iridium packet
-SerialCommand cmd_irsp_("irsp", cmd_pisend_packet); // send iridium packet
+SerialCommand cmd_irbp_("irbp", cmd_irbuild_packet); // build iridium packet
+SerialCommand cmd_irsp_("irsp", cmd_irsend_packet); // send iridium packet
 SerialCommand cmd_pibp_("pibp", cmd_pibuild_packet); // send iridium packet
 SerialCommand cmd_pisp_("pisp", cmd_pisend_packet); // send iridium packet
+
+SerialCommand cmd_ls_("ls", cmd_ls);        // get how many files are on sd card
+SerialCommand cmd_5von_("5von", cmd_5von);   // turn the photomos on 
+SerialCommand cmd_5voff_("5voff", cmd_5voff); // turn the photomos off
+SerialCommand cmd_3von_("3von", cmd_3von);   // external 3v3 on
+SerialCommand cmd_3voff_("3voff", cmd_3voff); // external 3v3 off
+
 
 SerialCommand cmd_setimuper_("setimuperiod", cmd_set_imu_period);
 SerialCommand cmd_settcper_("settcperiod", cmd_set_tc_period);
 SerialCommand cmd_setprsper_("setprsperiod", cmd_set_prs_period);
 
-SerialCommand cmd_radlogontc_("radlogontc", cmd_radlogontc);
-SerialCommand cmd_radlogonimu_("radlogonimu", cmd_radlogonimu);
-SerialCommand cmd_radlogonacc_("radlogonacc", cmd_radlogonacc);
-SerialCommand cmd_radlogonprs_("radlogonprs", cmd_radlogonprs);
-SerialCommand cmd_radlogonquat_("radlogonquat", cmd_radlogonquat);
-SerialCommand cmd_radlogongga_("radlogongga", cmd_radlogongga);
-SerialCommand cmd_radlogonrmc_("radlogonrmc", cmd_radlogonrmc);
+SerialCommand cmd_radlogontc_("logontc", cmd_radlogontc);
+SerialCommand cmd_radlogonimu_("logonimu", cmd_radlogonimu);
+SerialCommand cmd_radlogonacc_("logonacc", cmd_radlogonacc);
+SerialCommand cmd_radlogonprs_("logonprs", cmd_radlogonprs);
+SerialCommand cmd_radlogonquat_("logonquat", cmd_radlogonquat);
+SerialCommand cmd_radlogongga_("logongga", cmd_radlogongga);
+SerialCommand cmd_radlogonrmc_("logonrmc", cmd_radlogonrmc);
 
-SerialCommand cmd_radlogofftc_("radlogofftc", cmd_radlogofftc);
-SerialCommand cmd_radlogoffprs_("radlogoffprs", cmd_radlogoffprs);
-SerialCommand cmd_radlogoffimu_("radlogoffimu", cmd_radlogoffimu);
-SerialCommand cmd_radlogoffacc_("radlogoffacc", cmd_radlogoffacc);
-SerialCommand cmd_radlogoffquat_("radlogoffquat", cmd_radlogoffquat);
-SerialCommand cmd_radlogoffgga_("radlogoffgga", cmd_radlogoffgga);
-SerialCommand cmd_radlogoffrmc_("radlogoffrmc", cmd_radlogoffrmc);
+SerialCommand cmd_radlogofftc_("logofftc", cmd_radlogofftc);
+SerialCommand cmd_radlogoffprs_("logoffprs", cmd_radlogoffprs);
+SerialCommand cmd_radlogoffimu_("logoffimu", cmd_radlogoffimu);
+SerialCommand cmd_radlogoffacc_("logoffacc", cmd_radlogoffacc);
+SerialCommand cmd_radlogoffquat_("logoffquat", cmd_radlogoffquat);
+SerialCommand cmd_radlogoffgga_("logoffgga", cmd_radlogoffgga);
+SerialCommand cmd_radlogoffrmc_("logoffrmc", cmd_radlogoffrmc);
 
 // dispacth a command received from the capsule (if any, could be used as ACK / heartbeat)
 void dispatchCommand(int senderId, cmd_t command )
@@ -554,6 +647,7 @@ void dispatchCommand(int senderId, cmd_t command )
 void radioThread( void *param ){
   int fromNode = -1;
   cmd_t inCmd;
+  bool sendOkay = false;
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
@@ -736,6 +830,15 @@ void radioThread( void *param ){
           }
         } 
 
+        else if( radioRxBuf[radrxbufidx] == PTYPE_LS_T ){
+          if( sizeof(ls_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_LS_T, &radioRxBuf[radrxbufidx+1], sizeof(ls_t), true);
+            radrxbufidx += sizeof(ls_t) + 1;
+          }
+        } 
+
         // uh oh we have probably lost track of where we are in the buffer
         else {
           printBuffer[0] = 0;
@@ -832,62 +935,84 @@ void radioThread( void *param ){
     // the get the sd semaphore and try to send all that are in there
     // sending with retry can take time, so put the spi access semaphore inside the send loop
     txBufPos = 0;
-    // need to get access to send buffer and SD buffer
+    
+    
+    // begin new
     if( radioTxBufSize2 > 0 ){
       
+      #ifdef DEBUG_RADIO
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+        SERIAL.print("RAD: have data to send!");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
+
       // we can only send 60 bytes at a time, so look through the buffer and send as much as possible 
       // at once until the buffer is empty
-      while (radioTxBufSize2 - txBufPos > 0)
+      sendOkay = true;
+      while ((radioTxBufSize2 - txBufPos) > 0)
       {
+
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+          SERIAL.print("RAD: have ");
+          SERIAL.print(radioTxBufSize2);
+          SERIAL.print(" bytes to send...");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+
         // first get access to SPI bus
         if ( xSemaphoreTake( spiSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-
           // if there is more than 60 bytes in the send buffer, send 60 of it over and over
-          if( (radioTxBufSize2 - txBufPos) > 60 ){
+          if( (radioTxBufSize2 - txBufPos) >= 60 ){
+            //radio.send((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], 60, true);
+            //txBufPos += 60;
             if (radio.sendWithRetry(targetNode, &radioTxBuf2[txBufPos], 60 )){
               // success
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" ok!");
-                xSemaphoreGive( dbSem );
-              }
-              #endif
+              sendOkay &= true;
               txBufPos += 60;
             } else {
               // sending failed 
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" nothing..."); 
-                xSemaphoreGive( dbSem );
-              }
-              #endif
+              sendOkay &= false;
+              txBufPos += 60;
             }
           } else { // else if there is 60 or less bytes in the send buffer, just send what is there
+            //radio.send((uint16_t)NODE_ADDRESS_STATION, &radioTxBuf2[txBufPos], (uint8_t)(radioTxBufSize2 - txBufPos), true );
+            //txBufPos += (radioTxBufSize2 - txBufPos);
             if (radio.sendWithRetry(targetNode, &radioTxBuf2[txBufPos], (radioTxBufSize2 - txBufPos) )){
               // send success
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" ok!");
-                xSemaphoreGive( dbSem );
-              }
-              #endif
+              sendOkay &= true;
               txBufPos += (radioTxBufSize2 - txBufPos);
             } else {
-              // sending failed 
-              #ifdef DEBUG_RADIO
-              if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-                Serial.print(" nothing..."); 
-                xSemaphoreGive( dbSem );
-              }
-              #endif          
+              // sending failed
+              sendOkay &= false;    
+              txBufPos += (radioTxBufSize2 - txBufPos);
             }
           }
           xSemaphoreGive( spiSem );
         } // end access to the SPI bus
       }
 
+      if( sendOkay ){
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+          Serial.println(" debug radio send ok");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      } else {
+        #ifdef DEBUG_RADIO
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+          Serial.print(" debug radio send fail"); 
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      }
+
       radioTxBufSize2 = 0;
     } // end if radioTxBufSize > 0
+    //end new
   
     myDelayMs(10);
   }
@@ -905,6 +1030,12 @@ void serialThread( void *param ){
   serial_commands_.AddCommand(&cmd_irsp_); // send iridium packet (internally generated)
   serial_commands_.AddCommand(&cmd_pibp_); // build iridium packet from nanopi
   serial_commands_.AddCommand(&cmd_pisp_); // send iridium packet from nano pi
+
+  serial_commands_.AddCommand(&cmd_ls_); // ask for number of files on sd card
+  serial_commands_.AddCommand(&cmd_5von_);
+  serial_commands_.AddCommand(&cmd_5voff_);
+  serial_commands_.AddCommand(&cmd_3von_);
+  serial_commands_.AddCommand(&cmd_3voff_);
 
   serial_commands_.AddCommand(&cmd_st_); // set target node
 
@@ -978,8 +1109,8 @@ void setup() {
   /**************
   * CREATE TASKS
   **************/
-  xTaskCreate(radioThread, "Radio Control", 1024, NULL, tskIDLE_PRIORITY + 2, &Handle_radTask);
-  xTaskCreate(serialThread, "Serial Interface", 1024, NULL, tskIDLE_PRIORITY + 2, &Handle_serTask);
+  xTaskCreate(radioThread, "Radio Control", 1024, NULL, tskIDLE_PRIORITY , &Handle_radTask);
+  xTaskCreate(serialThread, "Serial Interface", 1024, NULL, tskIDLE_PRIORITY , &Handle_serTask);
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
   
   #if DEBUG

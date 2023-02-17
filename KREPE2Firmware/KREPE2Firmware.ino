@@ -12,7 +12,9 @@
 #include <Adafruit_MPL3115A2.h>
 #include <Adafruit_BNO08x.h>
 #include <Adafruit_MCP9600.h>
+#include <Adafruit_SleepyDog.h>
 #include <ArduinoNmeaParser.h>
+#include <SerialCommands.h>
 #include <FreeRTOS_SAMD51.h>
 #include <Honeywell_ABP.h>
 #include <ArduinoJson.h>
@@ -30,8 +32,9 @@
 #include "src/packet.h"        // packet definitions
 #include "src/commands.h"      // command definitions
 #include "pins.h"              // flight computer pinouts
-#include "src/serial_headers.h" // Headers for serial print
+#include "src/serial_headers.h"// Headers for serial print
 #include "src/brieflz.h"
+#include "src/utils.h"         // 
 
 
 // Serial 2
@@ -121,6 +124,7 @@ TaskHandle_t Handle_radTask; // telem radio task handle
 TaskHandle_t Handle_monitorTask; // debug running task stats over uart task
 TaskHandle_t Handle_bsmsTask; // battery and spectrometer measurement (BSMS) task
 TaskHandle_t Handle_piTask;  // nanoPi data sending task
+TaskHandle_t Handle_dumpTask; // data dump thread
 
 // freeRTOS semaphores
 SemaphoreHandle_t dbSem; // serial debug logging (Serial)
@@ -138,7 +142,7 @@ SemaphoreHandle_t piBufSem; // access to the pi send buffer
 // sample periods start off as preconfigured then slowly decrease after re-entry
 uint16_t imu_sample_period = IMU_SAMPLE_PERIOD_MS;
 uint16_t tc_sample_period = TC_SAMPLE_PERIOD_MS;
-uint16_t prs_sample_period = PRS_SAMPLE_PERIOS_MS;
+uint16_t prs_sample_period = PRS_SAMPLE_PERIOD_MS;
 
 // buffers for the pi thread, containing recently created data to be sent to the Pi
 // each lines is a null terminated string to be filled by sprintf
@@ -187,6 +191,9 @@ volatile bool gb1Full = false, gb2Full = false;
 volatile bool globalDeploy = false;
 volatile bool irSig = 0;
 volatile bool packetReady = 0;
+volatile bool internalBuildPacket = false;
+volatile bool autoBuildInternal = false;
+volatile uint16_t abint_period = IRIDIUM_PACKET_PERIOD;
 int gPacketSize = 0;
 char gIrdBuf[SBD_TX_SZ];
 
@@ -221,6 +228,160 @@ H3LIS100 highg = H3LIS100(0x1234); // 0x1234 is an arbitrary sensor ID, not an I
 
 // IRIDIUM MODEM OBJECT
 IridiumSBD modem(SERIAL_IRD);
+
+
+void printDirectory(SerialCommands* sender, File dir, int numTabs);
+
+void initSD(SerialCommands* sender)
+{
+	// list files on SD card
+	// sender->GetSerial()->print("Initializing SD card...");
+  if (!SD.begin(PIN_SD_CS)) {
+    #if DEBUG
+    sender->GetSerial()->println("initialization failed. Things to check:");
+    sender->GetSerial()->println("1. is a card inserted?");
+    sender->GetSerial()->println("2. is your wiring correct?");
+    sender->GetSerial()->println("3. did you change the chipSelect pin to match your shield or module?");
+    sender->GetSerial()->println("Note: press reset or reopen this serial monitor after fixing your issue!");
+    #endif
+    while (true){
+      ledColor(0);
+      myDelayMs(500);
+      ledColor(1);
+      myDelayMs(500);
+    }
+  }
+}
+
+// remove files on SD card
+void cmd_rm(SerialCommands* sender)
+{
+  initSD(sender);
+  File root = SD.open("/");
+  clearFiles(sender, root);
+  root.close();
+  sender->GetSerial()->println();
+}
+
+// list files on SD card
+void cmd_ls(SerialCommands* sender)
+{
+  initSD(sender);
+  File root = SD.open("/");
+  printDirectory(sender, root, 0);
+  root.close();
+  sender->GetSerial()->println();
+}
+
+void cmd_dump(SerialCommands* sender)
+{
+	//Note: Every call to Next moves the pointer to next parameter
+
+	char* file_str = sender->Next();
+	if (file_str == NULL)
+	{
+		sender->GetSerial()->println("Need filename as argument");
+		return;
+	}
+	
+	initSD(sender);
+  
+  File dataFile = SD.open(file_str);
+  if (dataFile) {
+    while (dataFile.available()) {
+      sender->GetSerial()->write(dataFile.read());
+    }
+    dataFile.close();
+  } else {
+    sender->GetSerial()->print("error opening ");
+    sender->GetSerial()->println(file_str);
+  }
+  sender->GetSerial()->println();
+}
+
+void clearFiles(SerialCommands* sender, File dir) {
+
+  while (true) {
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    if (entry.isDirectory()) {
+      clearFiles(sender, entry);
+    } else {
+      if ( strcmp(entry.name(), "CONFIG.TXT") != 0){
+        SD.remove(entry.name());
+      }
+    }
+  }
+}
+
+void printDirectory(SerialCommands* sender, File dir, int numTabs) {
+
+  while (true) {
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    for (uint8_t i = 0; i < numTabs; i++) {
+      sender->GetSerial()->print('\t');
+    }
+    sender->GetSerial()->print(entry.name());
+    if (entry.isDirectory()) {
+      sender->GetSerial()->println("/");
+      printDirectory(sender, entry, numTabs + 1);
+    } else {
+      // files have sizes, directories do not
+      sender->GetSerial()->print("\t\t");
+      sender->GetSerial()->println(entry.size(), DEC);
+    }
+    entry.close();
+  }
+}
+
+//This is the default handler, and gets called when no other command matches. 
+void cmd_unrecognized(SerialCommands* sender, const char* cmd)
+{
+  sender->GetSerial()->print("Unrecognized command [");
+  sender->GetSerial()->print(cmd);
+  sender->GetSerial()->println("]");
+}
+
+char serial_command_buffer_[32];
+SerialCommands serial_commands_(&SERIAL, serial_command_buffer_, sizeof(serial_command_buffer_), "\r\n", " ");
+SerialCommand cmd_ls_("ls", cmd_ls);
+SerialCommand cmd_dump_("dump", cmd_dump);
+SerialCommand cmd_rm_("rm", cmd_rm);
+
+
+static void dumpThread( void *pvParameters )
+{
+  // this thread starts USB serial regardless of DEBUG flag becuase that is the
+  // data dump port (for now)
+  SERIAL.begin(115200);
+ 
+  myDelayMs(5000);
+
+
+  serial_commands_.SetDefaultHandler(cmd_unrecognized);
+	serial_commands_.AddCommand(&cmd_ls_);
+	serial_commands_.AddCommand(&cmd_rm_);
+	serial_commands_.AddCommand(&cmd_dump_);
+  
+  while (1) {
+    serial_commands_.ReadSerial();
+    if( digitalRead(PIN_EXT_INT) == LOW ){
+      myDelayMs(2000);
+      if( digitalRead(PIN_EXT_INT) == LOW )
+        NVIC_SystemReset();
+    }
+  }
+
+  vTaskDelete( NULL ); 
+}
+
 
 static void BSMSThread(void *pvParameters)
 {
@@ -326,6 +487,7 @@ int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
 }
 
 // communicate with NeoPi for packet creation
+// PI boots up after capsule initialization, when the 5v rail is turned on 
 static void piThread(void *pvParameters)
 {
   // zero out tx lines and line sizes
@@ -336,10 +498,6 @@ static void piThread(void *pvParameters)
     ptxBuf1LineSize[i] = 0;
     ptxBuf2LineSize[i] = 0;
   }
-
-  // 5 seconds after boot, turn on the pi and let it boot
-  // BSMS and pi are on same mosftet , use bsms gate wire
-  digitalWrite(PIN_GATE_SPEC, HIGH);
 
   while (1)
   {
@@ -398,12 +556,46 @@ void dispatchCommand(int senderId, cmd_t command)
   }
   #endif
 
+  if( command.cmdid == CMDID_AB_INTERNAL_ON ){
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("CMD: setting internal autobuild to on...");
+      xSemaphoreGive( dbSem );
+    }
+    autoBuildInternal = true; // protect with semaphore?
+    #endif
+  }
+
+  if( command.cmdid == CMDID_AB_INTERNAL_OFF ){
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("CMD: creating packet internally...");
+      xSemaphoreGive( dbSem );
+    }
+    autoBuildInternal = false; // protect with semaphore?
+    #endif
+  }
+
+  if( command.cmdid == CMDID_AB_INTERNAL_PER ){
+    abint_period = *((uint16_t*)(&command.data));
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting autobuild_internal sample period to: ");
+      SERIAL.print(abint_period);
+      SERIAL.println(" ms");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
   if( command.cmdid == CMDID_IR_BP ){
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
       SERIAL.println("CMD: creating packet internally...");
       xSemaphoreGive( dbSem );
     }
+    internalBuildPacket = true; // protect with semaphore?
     #endif
   }
 
@@ -419,6 +611,101 @@ void dispatchCommand(int senderId, cmd_t command)
     writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
   }
 
+  if( command.cmdid == CMDID_LS ){
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.println("CMD: asking for list of sd files...");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+
+    // figure out how many log files on SD card
+    // assume every file is a logfile
+    // and that the first logfile is names LG000.DAT and there are 
+    // no gaps in naming, i.e. if there are 2 files on the card they will be
+    // LG000.DAT and LG001.DAT
+
+    int numFiles = 0;
+    if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+
+      File root = SD.open("/");
+      while( root.openNextFile() ){
+        numFiles++;
+      }
+      root.close();
+      xSemaphoreGive( sdSem );
+    }
+
+    ls_t ls;
+    ls.numFiles = numFiles;
+
+    writeToRadBuf(PTYPE_LS_T, &ls, sizeof(ls_t));
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: found ");
+      SERIAL.print(numFiles);
+      SERIAL.println(" on SD card!");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_5VPWR_ON ){
+    digitalWrite(PIN_GATE_IR, HIGH);
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: turning ON the PHOTOMOS ");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_5VPWR_OFF ){
+    digitalWrite(PIN_GATE_IR, LOW);
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: turning OFF the PHOTOMOS ");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_3VPWR_ON ){
+    digitalWrite(PIN_3V32_CONTROL, HIGH);
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: turning ON the external 3v3 reg ");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_3VPWR_OFF ){
+    digitalWrite(PIN_3V32_CONTROL, LOW);
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: turning OFF the external 3v3 reg ");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_TC ){
+    radlog_tc = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio TC log to: ");
+      SERIAL.println(radlog_tc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
   
 
   if( command.cmdid == CMDID_SET_IMU_PER ){
@@ -626,11 +913,9 @@ static void radThread(void *pvParameters)
   }
   #endif
 
-  digitalWrite(PIN_3V32_CONTROL, HIGH);
   myDelayMs(1000);
 
   // manual reset on RFM69 radio, won't do anything if unpowered (3v32_ctrl pin)
-  pinMode(PIN_RADIO_RESET, OUTPUT);
   digitalWrite(PIN_RADIO_RESET, HIGH);
   myDelayMs(10);
   digitalWrite(PIN_RADIO_RESET, LOW);
@@ -1325,8 +1610,9 @@ static void imuThread( void *pvParameters )
     last_sample_time = xTaskGetTickCount();
 
     // copy high g acc data (h3lis100) into logging structs
-    accData.t = last_sample_time / TIME_SCALE;
-    imuData.t = last_sample_time / TIME_SCALE;
+    accData.t =  last_sample_time / TIME_SCALE;
+    imuData.t =  last_sample_time / TIME_SCALE;
+    quatData.t = last_sample_time / TIME_SCALE;
 
     accData.data[0] = h3event.acceleration.x * UNIT_SCALE;
     accData.data[1] = h3event.acceleration.y * UNIT_SCALE;
@@ -1653,7 +1939,7 @@ static void irdThread( void *pvParameters )
     }
 
     // IS IT TIME TO SEND A PACKKAGE??
-    if( xTaskGetTickCount() - lastPacketSend > IRIDIUM_PACKET_PERIOD &&
+    if( xTaskGetTickCount() - lastPacketSend > abint_period &&
         (mSq > 0) &&
         SEND_PACKETS &&
         pready){
@@ -1844,6 +2130,12 @@ static void packetBuildThread( void * pvParameters )
   myDelayMs(30000);
 
   while(1) {
+
+    if( !internalBuildPacket && autoBuildInternal == false ){
+      myDelayMs(1000);
+      continue;
+    }
+
     input_size = 0;
     actual_read = 0;
     packetsToSample = 5; // start with 5, var gets incremented before first use
@@ -1940,8 +2232,13 @@ static void packetBuildThread( void * pvParameters )
     // TODO: don't try forever
     writeToLogBuf(PTYPE_PACKET, &packet, sizeof(packet_t));
 
+    internalBuildPacket = false;
+
+    
     // build a packet periodically
-    myDelayMs(PACKET_BUILD_PERIOD);
+    if( autoBuildInternal ){
+      myDelayMs(PACKET_BUILD_PERIOD);
+    }
   }
 
   vTaskDelete( NULL );
@@ -2261,6 +2558,13 @@ if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
   vTaskDelete( NULL );
 }
 
+/*
+ * sleep ISR for pre-activation sleep
+*/
+void sleepISR(){
+
+}
+
 /**********************************************************************************/
 /**********************************************************************************/
 /**********************************************************************************/
@@ -2272,14 +2576,55 @@ void setup() {
   // should we sleep here? or initialize all of the peripherals and then sleep..
 
 
+  led.begin();
+  led.show();
+
+  pinMode(PIN_EXT_INT, INPUT_PULLUP);
+  delay(10);
+  attachInterrupt(PIN_EXT_INT, sleepISR, RISING);
+
+  bool woke = digitalRead(PIN_EXT_INT);
+
+  if( woke ){
+
+    ledColor(0);
+
+    // put the radio in reset state
+    pinMode(PIN_RADIO_RESET, OUTPUT);
+    pinMode(PIN_RADIO_SS, OUTPUT);
+    digitalWrite(PIN_RADIO_RESET, HIGH);
+    digitalWrite(PIN_RADIO_SS, HIGH);
+    
+    xTaskCreate(dumpThread, "Data dump", 1024, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
+    //xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+    
+    // Start the RTOS, this function will never return and will schedule the tasks.
+    vTaskStartScheduler();
+
+    // error scheduler failed to start
+    while(1)
+    {
+      SERIAL.println("Scheduler Failed! \n");
+      delay(1000);
+    }
+
+  } else {
+    while ( !woke ) {
+        // go to sleep for some period of time
+        // about 16 seconds is max before watchdog in testing
+        int sleepMS = Watchdog.sleep();
+        // now asleep
+        woke = digitalRead(PIN_EXT_INT);
+    }
+  }
+
+  
 
 
   #if DEBUG
   SERIAL.begin(115200); // init debug serial
   #endif
 
-  led.begin();
-  led.show();
 
   for( int i=0; i<10; i++ ){
     ledColor(i%5);
@@ -2293,7 +2638,7 @@ void setup() {
 
 
   delay(100);
-  SERIAL_GPS.begin(9600); // init gps serial
+  SERIAL_GPS.begin(115200); // init gps serial
   delay(10);
   SERIAL_PI.begin(115200); // init serial to NanoPi
   delay(10);
@@ -2315,16 +2660,22 @@ void setup() {
   pinMode(PIN_RADIO_SS, OUTPUT);
   pinMode(PIN_3V32_CONTROL, OUTPUT);
   pinMode(PIN_GATE_IR, OUTPUT);
-  pinMode(PIN_GATE_SPEC, OUTPUT);
 
-  digitalWrite( PIN_GATE_IR, LOW );
-  digitalWrite( PIN_GATE_SPEC, LOW );
+  // keep radio in reset state until sd thread is started 
+  digitalWrite(PIN_RADIO_RESET, HIGH);
+  digitalWrite(PIN_RADIO_SS, HIGH);
+
+  // turn on 5v rail through photoMOS and enable the 3vr3 reg that
+  // powers the rs232 level shifter
+  digitalWrite( PIN_GATE_IR, HIGH );
+  digitalWrite( PIN_3V32_CONTROL, HIGH);
+
 
   // battery voltage divider
   pinMode(PIN_VBAT, INPUT);
 
   Wire.begin();
-  Wire.setClock(100000); // safer?
+  Wire.setClock(100000); // mcp9600 spec is 1Mhz
 
   delay(1000);
 
@@ -2434,9 +2785,8 @@ void setup() {
   /**************
   * CREATE TASKS
   **************/
-  xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
   xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
-  xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
   xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
   xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
   xTaskCreate(prsThread,  "Pressure Measurement", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
@@ -2444,6 +2794,8 @@ void setup() {
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
   xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
+  xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+
   
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
 
