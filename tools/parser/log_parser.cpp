@@ -45,8 +45,6 @@ int main(int argc, char** argv)
   //std::cout << "strcmp(argv[1], \"log\") = " << strcmp(argv[1], "log") << std::endl;
   //std::cout << "strcmp(argv[1], \"packet\") = " << strcmp(argv[1], "packet") << std::endl;
 
-  if( DEBUG ) std::cout << "HERE 1" << std::endl;
-
   if( !( strcmp(argv[1], "log")==0 || strcmp(argv[1],"packet")==0) ){
     usage(argv);
     return 0;
@@ -57,7 +55,7 @@ int main(int argc, char** argv)
   unsigned long cp = 0;
   int offset = 0;
   std::string inFileName;
-  std::ifstream inFile(inFileName);
+  std::ifstream inFile;
   std::ofstream outFile;
   //std::vector<std::string> outFileNames;
 
@@ -109,6 +107,8 @@ int main(int argc, char** argv)
   } else {
     
     inFileName.assign(argv[2]);
+    std::cout << "infile name is" << inFileName << std::endl;
+    inFile.open(inFileName);
 
     if( DEBUG_SIZEOF ){
       int s = sizeof(float);
