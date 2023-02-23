@@ -8,16 +8,15 @@
   //#define DEBUG_QUEUE 1 // print info on log queue operations
   //#define DEBUG_VERBOSE 1
   //#define DEBUG_BARO 1
-  //#define DEBUG_IRD 1
+  #define DEBUG_IRD 1
   #define DEBUG_LOG 1
   //#define DEBUG_TICK 1
-  #define DEBUG_RADIO 1
+  //#define DEBUG_RADIO 1
   //#define DEBUG_PRESSURE 1
   #define DEBUG_SPEC 1
   //#define DEBUG_IMU 1
   //#define DEBUG_TC
-  //#define DEBUG_TPMS_TRANSFER
-//#define DEBUG_MCP_STARTUP
+  //#define DEBUG_MCP_STARTUP
 #endif
 
 #define RAD2DEG 57.2957795131
@@ -39,6 +38,9 @@
 #define NODE_ADDRESS_KREPE2_003 5
 #define NODE_ADDRESS_KREPE2_004 6
 #define NODE_ADDRESS_KREPE2_005 7
+
+// TODO: need to replace with compile time flag
+#define NODE_ADDRESS NODE_ADDRESS_KREPE2_002 
 
 // uncomment to enable GPS
 // gps sample period is default 1Hz

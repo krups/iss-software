@@ -23,7 +23,8 @@
 #include "src/config.h"        // project wide defs
 #include "src/packet.h"        // data packet defs
 #include "src/commands.h"      // command spec
-#include "pins.h"                  // groundstation system pinouts
+#include "src/utils.h"      
+#include "pins.h"              // groundstation system pinouts
 
 #undef DEBUG
 #undef DEBUG_RADIO
@@ -321,7 +322,7 @@ void cmd_radlogonprs(SerialCommands* sender)
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-    sender->GetSerial()->print("setting PRS radio log OFF");
+    sender->GetSerial()->print("setting PRS radio log ON");
     xSemaphoreGive( dbSem );
   }
   #endif
@@ -586,11 +587,22 @@ void cmd_help(SerialCommands* sender, const char* cmd)
 
     // TODO: print list of available commands..
 
+    SerialCommand *head = sender->commands_head_;
+    SerialCommand *next = head->next;
+    if( head != NULL ){
+      while(next->next != sender->commands_tail_){
+        next = next->next;
+        sender->GetSerial()->print("  ");
+        sender->GetSerial()->println(next->command);
+      }
+    }
+
     xSemaphoreGive( dbSem );
   }
   #endif
 }
 
+// cmd_st_ must stay the first command 
 SerialCommand cmd_st_("target", cmd_set_target); // set target node to send commands to (only affects groundstation)
 
 
@@ -1025,7 +1037,7 @@ void radioThread( void *param ){
 /// @brief 
 /// @param param 
 void serialThread( void *param ){
-  serial_commands_.SetDefaultHandler(cmd_help);
+  serial_commands_.SetDefaultHandler(&cmd_help);
   serial_commands_.AddCommand(&cmd_irbp_); // build iridium packet (internally generated)
   serial_commands_.AddCommand(&cmd_irsp_); // send iridium packet (internally generated)
   serial_commands_.AddCommand(&cmd_pibp_); // build iridium packet from nanopi

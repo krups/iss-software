@@ -890,6 +890,30 @@ void dispatchCommand(int senderId, cmd_t command)
     }
     #endif
   }
+
+  if( command.cmdid == CMDID_RADLOGOFF_ACC ){
+    radlog_acc = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio ACC log to: ");
+      SERIAL.println(radlog_acc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_ACC ){
+    radlog_acc = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio ACC log to: ");
+      SERIAL.println(radlog_acc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
 }
 
 
@@ -924,7 +948,7 @@ static void radThread(void *pvParameters)
   uint8_t temp = 0;
 
   if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-    radio.initialize(FREQUENCY, NODE_ADDRESS_TESTNODE, NETWORK_ID);
+    radio.initialize(FREQUENCY, NODE_ADDRESS, NETWORK_ID);
     radio.setHighPower(); //must include this only for RFM69HW/HCW!
     radio.encrypt(ENCRYPTKEY);
     temp = radio.readTemperature();
@@ -1334,7 +1358,7 @@ void onGgaUpdate(nmea::GgaData const gga)
   #ifdef DEBUG_GPS
   //if (gga.fix_quality != nmea::FixQuality::Invalid) {
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-      writeGga(gga, Serial);
+      writeGga(gga, SERIAL);
       xSemaphoreGive( dbSem );
     }
   //}
@@ -1423,16 +1447,12 @@ static void gpsThread( void *pvParameters )
   }
   #endif
 
-  //vTaskDelay(15000);
-  myDelayMs(15000);
-
-  digitalWrite(PIN_GATE_IR, HIGH);
-
   while(1) {
     // semaphore should not be needed since this is the only thread 
     // accessing the hardware
     //if ( xSemaphoreTake( gpsSerSem, ( TickType_t ) 100 ) == pdTRUE ) {
       while (SERIAL_GPS.available()) {
+        //SERIAL.write((char)SERIAL_GPS.read());
         parser.encode((char)SERIAL_GPS.read());
       }
     //  xSemaphoreGive( gpsSerSem );
@@ -1466,7 +1486,6 @@ static void imuThread( void *pvParameters )
   acc_t accData;
   imu_t imuData;
   quat_t quatData;
-  // TODO: implement absolute orientation logging
 
   // unsigned long sample_period_ms = 20;
   unsigned long last_sample_time = 0, lastlast_sample_time = 0;
@@ -2577,6 +2596,7 @@ void setup() {
 
 
   led.begin();
+  led.setPixelColor(0, led.Color(0, 0, 0));
   led.show();
 
   pinMode(PIN_EXT_INT, INPUT_PULLUP);
@@ -2638,11 +2658,11 @@ void setup() {
 
 
   delay(100);
-  SERIAL_GPS.begin(115200); // init gps serial
+  SERIAL_GPS.begin(38400); // init gps serial
   delay(10);
   SERIAL_PI.begin(115200); // init serial to NanoPi
   delay(10);
-  SERIAL_IRD.begin(115200); // Iridium radio connection
+  SERIAL_IRD.begin(9600); // Iridium radio connection
   delay(10);
   SERIAL_BSMS.begin(115200); // serial connection to bsms
 

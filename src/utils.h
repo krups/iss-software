@@ -30,6 +30,7 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     tc_t td;
     memcpy(&td, data, size);
 
+    // convert floats to strings with dtostrf()
     char tc1Buf[10], tc2Buf[10], tc3Buf[10], tc4Buf[10], tc5Buf[10], tc6Buf[10];
     dtostrf( (float)td.data[0] / UNIT_SCALE, 7, 5, tc1Buf );
     dtostrf( (float)td.data[1] / UNIT_SCALE, 7, 5, tc2Buf );
