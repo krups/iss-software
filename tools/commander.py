@@ -31,7 +31,7 @@ else:
   print("error could not open port {}".format(sys.argv[1]))
   sys.exit(1)
 
-if len(sys.argv) < 4:
+if len(sys.argv) > 3:
   #  print("using stdout for bytes")
   with open(sys.argv[3], "wb") as binary_file:
       # Write bytes to file

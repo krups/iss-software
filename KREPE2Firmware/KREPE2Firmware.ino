@@ -193,6 +193,7 @@ volatile bool irSig = 0;
 volatile bool packetReady = 0;
 volatile bool internalBuildPacket = false;
 volatile bool autoBuildInternal = false;
+volatile bool autoBuildPi = true;
 volatile uint16_t abint_period = IRIDIUM_PACKET_PERIOD;
 int gPacketSize = 0;
 char gIrdBuf[SBD_TX_SZ];
@@ -501,8 +502,8 @@ static void piThread(void *pvParameters)
 
   while (1)
   {
-    // check if we have been asked to send anything to the Pi
 
+    // check if we have been asked to send anything to the Pi
     // if there are no lines to send, check later
     if( !ptxBuf1Full && !ptxBuf2Full ){
       //vTaskDelay(10);
@@ -534,7 +535,8 @@ static void piThread(void *pvParameters)
       }
     }
 
-    // send the magic byte to ask for a binary packet back to send, then place that in the iridium buffer. 
+
+    // TODO: check if data (a packet) has been sent to us from the Pi
     
   }
 
@@ -569,7 +571,7 @@ void dispatchCommand(int senderId, cmd_t command)
   if( command.cmdid == CMDID_AB_INTERNAL_OFF ){
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-      SERIAL.println("CMD: creating packet internally...");
+      SERIAL.println("CMD: setting internal autobuild to off...");
       xSemaphoreGive( dbSem );
     }
     autoBuildInternal = false; // protect with semaphore?
@@ -2137,7 +2139,7 @@ static void packetBuildThread( void * pvParameters )
   // choose based on expected size of packets you are sampling
   // and the assumption that compressing wont make the data bigger
   int packetsToSample = 1;
-
+  unsigned long lastPiAutoBuild = 0;
 
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -2146,9 +2148,26 @@ static void packetBuildThread( void * pvParameters )
   }
   #endif
 
-  myDelayMs(30000);
+  myDelayMs(5000);
 
   while(1) {
+
+     
+    // periodically send the magic byte to ask for a binary packet back to send, 
+    // then place that in the iridium buffer. 
+    if( autoBuildPi && xTaskGetTickCount() - lastPiAutoBuild > PACKET_BUILD_PERIOD ){
+      lastPiAutoBuild = xTaskGetTickCount();
+
+      // put a request into the buffer to go out to the pi
+      writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
+
+      #ifdef DEBUG
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+        SERIAL.print("sending packet build request for autobuild");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
+    }    
 
     if( !internalBuildPacket && autoBuildInternal == false ){
       myDelayMs(1000);
@@ -2594,6 +2613,28 @@ void setup() {
 
   // should we sleep here? or initialize all of the peripherals and then sleep..
 
+  pinMode(14, INPUT);
+  pinMode(15, INPUT);
+  pinMode(16, INPUT);
+  pinMode(17, INPUT);
+  pinMode(18, INPUT);
+  pinMode(19, INPUT);
+  pinMode(25, INPUT);
+  pinMode(24, INPUT);
+  pinMode(23, INPUT);
+  pinMode(0, INPUT);
+  pinMode(1, INPUT);
+  pinMode(4, INPUT);
+
+  pinMode(13, INPUT);
+  pinMode(12, INPUT);
+  pinMode(11, INPUT);
+  pinMode(10, INPUT);
+  pinMode(9, INPUT);
+  pinMode(6, INPUT);
+  pinMode(5, INPUT);
+  pinMode(22, INPUT);
+  pinMode(21, INPUT);
 
   led.begin();
   led.setPixelColor(0, led.Color(0, 0, 0));
@@ -2614,6 +2655,10 @@ void setup() {
     pinMode(PIN_RADIO_SS, OUTPUT);
     digitalWrite(PIN_RADIO_RESET, HIGH);
     digitalWrite(PIN_RADIO_SS, HIGH);
+
+    // enable 3.3v to the SD card
+    pinMode(PIN_3V32_CONTROL, OUTPUT);
+    digitalWrite(PIN_3V32_CONTROL, HIGH);
     
     xTaskCreate(dumpThread, "Data dump", 1024, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
     //xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
@@ -2629,6 +2674,12 @@ void setup() {
     }
 
   } else {
+    //USB->DEVICE.CTRLA.bit.ENABLE = 0;                   // Shutdown the USB peripheral
+    //while(USB->DEVICE.SYNCBUSY.bit.ENABLE);             // Wait for synchronization
+    
+    PM->SLEEPCFG.bit.SLEEPMODE = 0x4;             // Set up SAMD51 to enter low power STANDBY mode
+    while(PM->SLEEPCFG.bit.SLEEPMODE != 0x4);
+    
     while ( !woke ) {
         // go to sleep for some period of time
         // about 16 seconds is max before watchdog in testing
@@ -2805,14 +2856,14 @@ void setup() {
   /**************
   * CREATE TASKS
   **************/
-   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
+   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY + 2, &Handle_logTask);
   xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
   xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
   xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
   xTaskCreate(prsThread,  "Pressure Measurement", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
+  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY + 3, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
 
