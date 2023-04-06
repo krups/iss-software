@@ -207,13 +207,13 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     dtostrf( rmc.lat, 7, 5, latBuf );
     dtostrf( rmc.lon, 7, 5, lonBuf );
     dtostrf( rmc.speed, 7, 5, spdBuf );
-    dtostrf( rmc.course, 7, 5, crsBuf );
+    //dtostrf( rmc.course, 7, 5, crsBuf );
 
     if ( json ){
       ret = 0; 
     } else {
       ret = sprintf(dest,
-                  "%d, %d, %d,%d,%d,%d, %s, %s, %s, %s\n",
+                  "%d, %d, %d,%d,%d,%d, %s, %s, %s\n",
                   ptype,
                   rmc.t, // system time
                   rmc.time[0],
@@ -222,8 +222,8 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
                   rmc.time[3],
                   latBuf,
                   lonBuf,
-                  spdBuf,
-                  crsBuf);
+                  spdBuf
+                  );
     }
     
 

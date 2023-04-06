@@ -38,9 +38,11 @@
 #define NODE_ADDRESS_KREPE2_003 5
 #define NODE_ADDRESS_KREPE2_004 6
 #define NODE_ADDRESS_KREPE2_005 7
+#define NODE_ADDRESS_KREPE2_006 8
+#define NODE_ADDRESS_KREPE2_007 9
 
 // TODO: need to replace with compile time flag
-#define NODE_ADDRESS NODE_ADDRESS_KREPE2_002 
+#define NODE_ADDRESS NODE_ADDRESS_KREPE2_007
 
 // uncomment to enable GPS
 // gps sample period is default 1Hz
@@ -69,7 +71,7 @@
 #define SBD_TX_SZ 340
 
 // how often to build a packet (in milliseconds)
-#define PACKET_BUILD_PERIOD 20000
+#define PACKET_BUILD_PERIOD 30000
 
 // calibration for barometer altitude reading
 #define BAR_SEA_PRESSURE 1013.26
