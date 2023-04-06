@@ -386,8 +386,8 @@ static void dumpThread( void *pvParameters )
 
 static void BSMSThread(void *pvParameters)
 {
-  // TODO: receive data over UART from BSMS
-
+  uint16_t spec[288]; // 288 samples from the spectrometer
+  spec_t data;
   float vbat = 0.0;
 
   while (1)
@@ -398,7 +398,14 @@ static void BSMSThread(void *pvParameters)
     // vin = measurement from BSMS
 
     // read in spectrometer over Serial4
-  
+    if(SERIAL_PI.available()){
+      for(int i = 0; i < 288; i++){
+        spec[i] = SERIAL_PI.read();
+      }
+    }
+	  
+    data.spec_data = spec;
+    // TODO: put the spectrometer data into bins
     myDelayMs(1000);
   }
 
