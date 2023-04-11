@@ -121,7 +121,8 @@ struct tlm_t {
 
 #ifdef USE_SPECTROMETER
 struct spec_t {
-  uint16_t spec_data[288];
+  uint16_t t;
+  uint16_t data[NUM_SPEC_CHANNELS];
   // TODO: Add members for bins
 };
 #endif

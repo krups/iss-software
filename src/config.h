@@ -4,7 +4,7 @@
 #define USE_DEBUG_RADIO 1
 #define DEBUG 1 // usb serial debug switch
 #ifdef DEBUG
-  #define DEBUG_GPS 1 // print raw gga to serial
+  //#define DEBUG_GPS 1 // print raw gga to serial
   //#define DEBUG_QUEUE 1 // print info on log queue operations
   //#define DEBUG_VERBOSE 1
   //#define DEBUG_BARO 1
@@ -50,7 +50,7 @@
 
 
 #define TC_SAMPLE_PERIOD_MS   1000
-#define SPEC_SAMPLE_PERIOD_MS 1000
+#define SPEC_SAMPLE_PERIOD_MS 2000
 #define IMU_SAMPLE_PERIOD_MS  500
 #define PRS_SAMPLE_PERIOD_MS  1000
 

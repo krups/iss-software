@@ -230,6 +230,9 @@ H3LIS100 highg = H3LIS100(0x1234); // 0x1234 is an arbitrary sensor ID, not an I
 // IRIDIUM MODEM OBJECT
 IridiumSBD modem(SERIAL_IRD);
 
+// incoming spectrometer data
+spec_t spec_data;
+
 
 void printDirectory(SerialCommands* sender, File dir, int numTabs);
 
@@ -384,29 +387,96 @@ static void dumpThread( void *pvParameters )
 }
 
 
+
+// print out a big line of spectrometer data, and timestamp and the number of channels
+// not final by any means (timestamp first?)
+void printData(uint16_t *data)
+{ // Print the NUM_SPEC_CHANNELS data, then print the current time, the current color, and the number of channels.
+    //SERIAL_DEBUG.print(id);
+    //SERIAL_DEBUG.print(',');
+    for (int i = 0; i < NUM_SPEC_CHANNELS-1; i++)
+    {
+        //    data_matrix(i) = data[i];
+        Serial.print(data[i], DEC);
+        Serial.print(',');
+    }
+    Serial.println(NUM_SPEC_CHANNELS-1);
+    //SERIAL_DEBUG.print(result[0] + result[1]);
+    //SERIAL_DEBUG.print(',');
+    //SERIAL_DEBUG.print(xTaskGetTickCount());
+    //SERIAL_DEBUG.print(',');
+    //SERIAL_DEBUG.print(NUM_SPEC_CHANNELS);
+}
 static void BSMSThread(void *pvParameters)
 {
-  uint16_t spec[288]; // 288 samples from the spectrometer
-  spec_t data;
   float vbat = 0.0;
+  
+  #ifdef DEBUG_SPEC
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
+      Serial.print("Sizeof(spec_t) is ");
+      Serial.println(sizeof(spec_t));
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+
 
   while (1)
   {
     // measure VBAT voltage
-    vbat = analogRead(PIN_VBAT) / 1023.0 * 3.3 * 2.0;
+    //vbat = analogRead(PIN_VBAT) / 1023.0 * 3.3 * 2.0;
 
     // vin = measurement from BSMS
 
     // read in spectrometer over Serial4
-    if(SERIAL_PI.available()){
-      for(int i = 0; i < 288; i++){
-        spec[i] = SERIAL_PI.read();
+    while(SERIAL_BSMS.available()){
+
+      // #ifdef DEBUG_SPEC
+      // if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+      //   Serial.println("bsms serial available");
+      //   xSemaphoreGive( dbSem );
+      // }
+      // #endif
+
+      memset((uint8_t*)(&spec_data), 0, sizeof(spec_t));
+      uint8_t *p = (uint8_t*)(&spec_data);
+      int bread = 0;
+      uint8_t type = SERIAL_BSMS.read();
+
+      if( type == PTYPE_SPEC ){
+
+        #ifdef DEBUG_SPEC
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
+          Serial.println("ptype is right");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+
+        while(bread < sizeof(spec_t)){
+          if(SERIAL_BSMS.available()) {
+            *p = SERIAL_BSMS.read();
+            p++;
+            bread++;
+          } 
+        }
+
+        #ifdef DEBUG_SPEC
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 10 ) == pdTRUE ) {
+          Serial.println("read");
+          Serial.print(bread); Serial.println(" bytes from spec");
+          printData(spec_data.data);
+          xSemaphoreGive( dbSem );
+        }
+        #endif 
+
       }
+      // for(int i = 0; i < 288; i++){
+      //   spec[i] = SERIAL_PI.read();
+      // }
     }
 	  
-    data.spec_data = spec;
+    // data.spec_data = spec;
     // TODO: put the spectrometer data into bins
-    myDelayMs(1000);
+    //myDelayMs(200);
   }
 
   vTaskDelete( NULL );
@@ -2470,6 +2540,14 @@ if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
 
     // create if does not exist, do not open existing, write, sync after write
     if (! SD.exists(filename)) {
+
+      #if DEBUG
+      if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+        Serial.print(filename);
+        Serial.print(" exists on card! ");
+        xSemaphoreGive( dbSem );
+      }
+      #endif
       break;
     }
   }
@@ -2666,7 +2744,11 @@ void setup() {
     // enable 3.3v to the SD card
     pinMode(PIN_3V32_CONTROL, OUTPUT);
     digitalWrite(PIN_3V32_CONTROL, HIGH);
-    
+    pinMode(PIN_GATE_IR, OUTPUT);
+    digitalWrite(PIN_GATE_IR, HIGH);
+
+    delay(2000);
+
     xTaskCreate(dumpThread, "Data dump", 1024, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
     //xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
     
@@ -2863,16 +2945,16 @@ void setup() {
   /**************
   * CREATE TASKS
   **************/
-   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY + 2, &Handle_logTask);
   xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
   xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
   xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
   xTaskCreate(prsThread,  "Pressure Measurement", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY + 3, &Handle_packetBuildTask);
+  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY + 1, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+  xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY+3, &Handle_logTask);
 
   
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);

@@ -121,42 +121,43 @@ void readSpectrometer(uint16_t *data)
 // not final by any means (timestamp first?)
 void printData(uint16_t *data, float result[2], int id)
 { // Print the NUM_SPEC_CHANNELS data, then print the current time, the current color, and the number of channels.
-    SERIAL_DEBUG.print(id);
-    SERIAL_DEBUG.print(',');
-    for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
+    //SERIAL_DEBUG.print(id);
+    //SERIAL_DEBUG.print(',');
+    for (int i = 0; i < NUM_SPEC_CHANNELS-1; i++)
     {
         //    data_matrix(i) = data[i];
         SERIAL_DEBUG.print(data[i]);
         SERIAL_DEBUG.print(',');
     }
-    SERIAL_DEBUG.print(result[0] + result[1]);
-    SERIAL_DEBUG.print(',');
-    SERIAL_DEBUG.print(xTaskGetTickCount());
-    SERIAL_DEBUG.print(',');
-    SERIAL_DEBUG.print(NUM_SPEC_CHANNELS);
-
-    SERIAL_DEBUG.print("\n");
+    SERIAL_DEBUG.println(NUM_SPEC_CHANNELS-1);
+    //SERIAL_DEBUG.print(result[0] + result[1]);
+    //SERIAL_DEBUG.print(',');
+    //SERIAL_DEBUG.print(xTaskGetTickCount());
+    //SERIAL_DEBUG.print(',');
+    //SERIAL_DEBUG.print(NUM_SPEC_CHANNELS);
 }
 
 // terrible copy of print data to just use a different serial port 
 // aka to main flight computer over hardware serial as opposed to us serial debug
-void printDataToFC(uint16_t *data, float result[2], int id)
+void printDataToFC(spec_t *data)
 { // Print the NUM_SPEC_CHANNELS data, then print the current time, the current color, and the number of channels.
-    SERIAL_FC.print(id);
-    SERIAL_FC.print(',');
-    for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
-    {
-        //    data_matrix(i) = data[i];
-        SERIAL_FC.print(data[i]);
-        SERIAL_FC.print(',');
-    }
-    SERIAL_FC.print(result[0] + result[1]);
-    SERIAL_FC.print(',');
-    SERIAL_FC.print(xTaskGetTickCount());
-    SERIAL_FC.print(',');
-    SERIAL_FC.print(NUM_SPEC_CHANNELS);
+  SERIAL_FC.write(PTYPE_SPEC);
+  SERIAL_FC.write((uint8_t*)data, sizeof(spec_t));
+    // SERIAL_FC.print(id);
+    // SERIAL_FC.print(',');
+    // for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
+    // {
+    //     //    data_matrix(i) = data[i];
+    //     SERIAL_FC.print(data[i]);
+    //     SERIAL_FC.print(',');
+    // }
+    // SERIAL_FC.print(result[0] + result[1]);
+    // SERIAL_FC.print(',');
+    // SERIAL_FC.print(xTaskGetTickCount());
+    // SERIAL_FC.print(',');
+    // SERIAL_FC.print(NUM_SPEC_CHANNELS);
 
-    SERIAL_FC.print("\n");
+    // SERIAL_FC.print("\n");
 }
 
 void calcIntLoop(uint16_t *data, int *multipliers, float* result)
@@ -193,24 +194,15 @@ void specThread( void *param ){
     readSpectrometer(data_spec);
     taskEXIT_CRITICAL();
 
-    // take reading from second spectrometer
-    //taskENTER_CRITICAL();
-    //readSpectrometer(PIN_SPEC2_TRIG, PIN_SPEC2_START, PIN_SPEC2_CLK, PIN_SPEC2_VIDEO, data_2);
-    //taskEXIT_CRITICAL();
-
-    calcIntLoop(data_spec, multipliers_1, res1);
-    //calcIntLoop(data_2, multipliers_2, res2);
-
     // put data in logging struct
     data.t = xTaskGetTickCount();
-    data.ch1 = res1[0] / res1[1];
-    //data.ch2 = res2[0] / res2[1];
+    memcpy(data.data, data_spec, sizeof(data_spec));
 
     // debug log
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
       printData(data_spec, res1, PTYPE_SPEC);
-      printDataToFC(data_spec, res1, PTYPE_SPEC);
+      printDataToFC(&data);
 
       //Serial.print("Spectro 1 Res: ");
       //Serial.print(res1[0]);
