@@ -61,6 +61,8 @@
 #define NUM_SPEC_CHANNELS 288
 #endif
 
+#define BATT_MEASUREMENTS 5
+
 // uncomment to enable error led reporting
 #define USE_LEDS
 
