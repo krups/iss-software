@@ -130,11 +130,7 @@ struct spec_t {
 
 struct batt_t {
   uint16_t;
-  uint16_t cell_1;
-  uint16_t cell_2;
-  uint16_t cell_3;
-  uint16_t pack;
-  uint16_t current;
+  uint16_t data[BATT_MEASUREMENTS];
 };
 
 // not a packet type, used in the groundstation firmware to hold the extra radio receive info
