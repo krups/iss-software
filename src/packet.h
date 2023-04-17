@@ -129,7 +129,7 @@ struct spec_t {
 #endif
 
 struct batt_t {
-  uint16_t;
+  uint16_t t;
   uint16_t data[BATT_MEASUREMENTS];
 };
 

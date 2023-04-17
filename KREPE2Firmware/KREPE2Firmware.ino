@@ -443,7 +443,7 @@ static void BSMSThread(void *pvParameters)
 
       memset((uint8_t*)(&batt_data), 0, sizeof(batt_t));
       memset((uint8_t*)(&spec_data), 0, sizeof(spec_t));
-      uint8_t *b = (unint8_t*)(&batt_data);
+      uint8_t *b = (uint8_t*)(&batt_data);
       uint8_t *p = (uint8_t*)(&spec_data);
       int bread = 0;
       uint8_t type = SERIAL_BSMS.read();
@@ -474,7 +474,9 @@ static void BSMSThread(void *pvParameters)
         }
         #endif 
 
-        
+        // try to write this data to the log buffer
+        writeToLogBuf(PTYPE_SPEC, &spec_data, sizeof(spec_t));
+
       }
 	    
       if( type == PTYPE_BATT ){
@@ -502,6 +504,9 @@ static void BSMSThread(void *pvParameters)
           xSemaphoreGive( dbSem );
         }
         #endif 
+
+        // try to write this data to the log buffer
+        writeToLogBuf(PTYPE_BATT, &batt_data, sizeof(batt_t));
 
       }
       // for(int i = 0; i < 288; i++){
