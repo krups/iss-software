@@ -159,7 +159,7 @@ volatile bool   ptxBuf1Full = false;
 volatile bool   ptxBuf2Full = false;
 
 // receive and send buffers for iridium transmission
-uint8_t rbuf[RBUF_SIZE];
+//uint8_t rbuf[RBUF_SIZE];
 char sbuf[SBUF_SIZE];
 
 // variables for the debug radio
@@ -188,6 +188,8 @@ volatile uint8_t activeLog = 1;   // which buffer should be used fo writing, 1 o
 volatile bool gb1Full = false, gb2Full = false;
 
 // variables relating to coordinating the sending of packets and iridium modem signal status
+packet_t packet, piPacket; // private to the packet build thread
+uint8_t buf[SBD_TX_SZ]; // private to the iridium sending thread
 volatile bool globalDeploy = false;
 volatile bool irSig = 0;
 volatile bool packetReady = 0;
@@ -468,6 +470,7 @@ static void BSMSThread(void *pvParameters)
         }
         #endif 
 
+        
       }
       // for(int i = 0; i < 288; i++){
       //   spec[i] = SERIAL_PI.read();
@@ -614,7 +617,12 @@ static void piThread(void *pvParameters)
 
 
     // TODO: check if data (a packet) has been sent to us from the Pi
-    
+    if ( SERIAL_PI.available() ){
+
+      // how many bytes are we expecting
+      // read in that many bytes.
+
+    }
   }
 
   vTaskDelete( NULL );
@@ -1896,7 +1904,6 @@ static void prsThread( void *pvParameters )
 static void irdThread( void *pvParameters )
 {
   bool fix_valid = false;
-  uint8_t buf[SBD_TX_SZ];
   int bufLen = 0;
   bool pready = false;
   int mSq = 0, irerr; // signal quality, modem operation return code
@@ -2212,7 +2219,6 @@ static void packetBuildThread( void * pvParameters )
   unsigned long actual_read;
   int temp = 0;
   int bytesRead = 0;
-  packet_t packet;
   // choose based on expected size of packets you are sampling
   // and the assumption that compressing wont make the data bigger
   int packetsToSample = 1;
@@ -2253,7 +2259,7 @@ static void packetBuildThread( void * pvParameters )
 
     input_size = 0;
     actual_read = 0;
-    packetsToSample = 5; // start with 5, var gets incremented before first use
+    packetsToSample = 30; // start with 5, var gets incremented before first use
     bytesRead = 0;
 
 

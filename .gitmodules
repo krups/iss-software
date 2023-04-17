@@ -1,0 +1,3 @@
+[submodule "tools/data-visualization-app"]
+	path = tools/data-visualization-app
+	url = git@github.com:alecsmith2103/data-visualization-app.git

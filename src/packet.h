@@ -39,7 +39,7 @@ struct packet_t {
 struct acc_t {
   uint16_t t;      // in seconds
   int16_t data[3]; // hold data * 10
-}; // 4 bytes
+}; // 8 bytes
 
 // type PTYPE_IMU
 struct imu_t {
@@ -48,7 +48,7 @@ struct imu_t {
   // if ok & 0x0F then imu booted
   uint16_t ok;
   int16_t data[6]; // in 10 * m/s/s and 10 * deg/s
-}; // 7 bytes
+}; // 16 bytes
 
 // type PTYPE_QUAT
 struct quat_t {
@@ -64,28 +64,28 @@ struct tc_t {
   uint16_t t;        // in seconds
   int16_t internal; // in 10 * deg C
   int16_t data[NUM_TC_CHANNELS]; // in 10 * deg C
-}; // NUM_TC_CHANNELS + 1 bytes
+}; // 16 bytes for 6 channels
 
 // type PTYPE_PRS
 struct prs_t {
   uint16_t t; // in seconds
   uint16_t data[NUM_PRS_CHANNELS];
-};
+}; // 12 bytes for 5 channels
 
 // type PTYPE_RMC
 struct rmc_t {
-  uint32_t t; // microprocessor time in ms
-  uint16_t time[4]; // hh:mm:ss:us GPS time
+  uint16_t t; // microprocessor time in seconds * 10
+  uint16_t time[4]; // hh:mm:ss:us UTC GPS time
   float lat;
   float lon;
   float speed;
   float course;
-};
+}; // 26 bytes
 
 // type PTYPE_GGA
 struct gga_t {
-  uint32_t t;
-  uint16_t time[4];
+  uint16_t t; // microprocessror time in 10*seconds
+  uint16_t time[4]; // utc time hh:mm:ss:us 
   float lat;
   float lon;
   float hdop;

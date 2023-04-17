@@ -68,7 +68,7 @@
 #define IRIDIUM_PACKET_PERIOD 20000 // milliseconds, send a packet every minute
 #define CHECK_SIGNAL_PERIOD   5000 // milliseconds
 #define DIAGNOSTICS false// Change this to see diagnostics
-#define SBD_TX_SZ 340
+#define SBD_TX_SZ 1960
 
 // how often to build a packet (in milliseconds)
 #define PACKET_BUILD_PERIOD 30000
@@ -89,7 +89,7 @@
 // pi buffer configuration
 // 5 lines of 200 chars each max string length
 #define  PI_BUFFER_LINES 10
-#define  PI_LINE_SIZE    1000
+#define  PI_LINE_SIZE    300
 
 // radio buffer configuration
 #define RADIO_TX_BUFSIZE 1024
@@ -99,8 +99,8 @@
 #define LOGBUF_HEADER_SIZE 2048
 
 // log buffer size in bytes (how many to accumulate before a write)
-#define LOGBUF_BLOCK_SIZE         2048              // 32768 / 32
-#define LOGBUF_FULL_SIZE    LOGBUF_BLOCK_SIZE - 512 // compressed iridium packet gauranteed to fit
+#define LOGBUF_BLOCK_SIZE         4096              // 32768 / 32
+#define LOGBUF_FULL_SIZE    LOGBUF_BLOCK_SIZE - 1960 // compressed iridium packet gauranteed to fit
 
 #define BLZ_HASH_BITS 12
 
