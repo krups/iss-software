@@ -9,8 +9,8 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_I2CRegister.h>
 #include <Adafruit_NeoPixel.h>
-#include <FreeRTOS_SAMD21.h>
-#include <ArduinoJson.h>
+#include <FreeRTOS_SAMD51.h>
+//#include <ArduinoJson.h>
 #include <semphr.h>
 
 #define DEBUG 1
@@ -18,13 +18,18 @@
     // more specific debug directives
 #endif
 
-#include "src/delay_helpers.h" // rtos delay helpers
-#include "src/config.h"        // project wide defs
-#include "src/packet.h"        // data packet defs
+#include "delay_helpers.h" // rtos delay helpers
+#include "config.h"        // project wide defs
+#include "packet.h"        // data packet defs
 #include "pins.h"              // BSMS system pinouts
 
 #define SERIAL_DEBUG Serial
 #define SERIAL_FC    Serial1
+
+spec_t spec_data;
+uint16_t batt_data[BATT_MEASUREMENTS];
+int address = 0x0B;
+uint16_t reading, cell_1, cell_2, cell_3, pack, current;
 
 // freertos task handles
 TaskHandle_t Handle_specTask;
@@ -36,14 +41,143 @@ SemaphoreHandle_t dbSem; // serial debug logging
 SemaphoreHandle_t specBufSem; // access to spectrometer data buffer
 SemaphoreHandle_t batBufSem;  // access to battery data buffer
 
-// for printing data to serial
-StaticJsonDocument<1024> doc;
-
 // spectrometer variables
 uint16_t data_spec[NUM_SPEC_CHANNELS]; // Define an array for the data read by the spectrometer
 int multipliers_1[NUM_SPEC_CHANNELS] = {0}; // Define an array for the coefficients of the simpson's rule
 float const coeff = ((850.0 - 340.0) / (NUM_SPEC_CHANNELS - 1) / 3); // Initial coefficient for the simpson's rule
 
+void get_voltage1(){
+  Serial.println("collect voltage of cell 1:");
+  Wire.beginTransmission(address);
+  Wire.write(0x3F);
+  Wire.endTransmission();
+  Wire.requestFrom(address, 2);
+   if(2 <= Wire.available())    // if 3 bytes were received
+  {
+    reading = Wire.read();  // receive high byte (overwrites previous reading)
+    reading = reading << 8;    // shift high byte to be high 8 bits
+    reading += Wire.read(); // receive low byte as lower 8 bits
+    reading = reading << 8; 
+    Serial.println(reading);   // print the reading
+    batt_data[0] = reading;
+  } 
+}
+
+void get_voltage2(){
+  Serial.println("collect voltage of cell 2:");
+  Wire.beginTransmission(address);
+  Wire.write(0x3E);
+  Wire.endTransmission();
+  Wire.requestFrom(address, 2);
+   if(2 <= Wire.available())    // if 3 bytes were received
+  {
+    reading = Wire.read();  // receive high byte (overwrites previous reading)
+    reading = reading << 8;    // shift high byte to be high 8 bits
+    reading += Wire.read(); // receive low byte as lower 8 bits
+    reading = reading << 8; 
+    Serial.println(reading);   // print the reading
+    batt_data[1] = reading;
+  } 
+}
+
+void get_voltage3(){
+  Serial.println("collect voltage of cell 3:");
+  Wire.beginTransmission(address);
+  Wire.write(0x3D);
+  Wire.endTransmission();
+  Wire.requestFrom(address, 2);
+   if(2 <= Wire.available())    // if 3 bytes were received
+  {
+    reading = Wire.read();  // receive high byte (overwrites previous reading)
+    reading = reading << 8;    // shift high byte to be high 8 bits
+    reading += Wire.read(); // receive low byte as lower 8 bits
+    reading = reading << 8; 
+    Serial.println(reading);   // print the reading
+    batt_data[2] = reading;
+  } 
+}
+
+void get_total_voltage(){
+  Serial.println("collect total voltage:");
+  Wire.beginTransmission(address);
+  Wire.write(0x09);
+  Wire.endTransmission();
+  Wire.requestFrom(address, 2);
+   if(2 <= Wire.available())    // if 3 bytes were received
+  {
+    reading = Wire.read();  // receive high byte (overwrites previous reading)
+    reading = reading << 8;    // shift high byte to be high 8 bits
+    reading += Wire.read(); // receive low byte as lower 8 bits
+    reading = reading << 8; 
+    Serial.println(reading);   // print the reading
+    batt_data[3] = reading;
+  } 
+}
+
+void get_current(){
+  Serial.println("Collect Current:");
+  Wire.beginTransmission(address);
+  Wire.write(0x0B);
+  Wire.endTransmission();
+  Wire.requestFrom(address, 2);
+   if(2 <= Wire.available())    // if 3 bytes were received
+  {
+    reading = Wire.read();  // receive high byte (overwrites previous reading)
+    reading = reading << 8;    // shift high byte to be high 8 bits
+    reading += Wire.read(); // receive low byte as lower 8 bits
+    reading = reading << 8; 
+    Serial.println(reading);   // print the reading
+    batt_data[4] = reading;
+  } 
+}
+
+void readSpectrometerFast(uint16_t *data)
+{ // from the spec sheet of the spectrometer
+  int delayTime = 1; // delay time
+  i = 0;
+  // start clock cycle and set start pulse to signal start
+  PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+  i++; i++;
+  PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+  i++; i++;
+  PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+  //digitalWrite(SPEC_ST, HIGH);
+  PORT->Group[PORTA].OUTSET.reg = PORT_PA05;
+  i++; i++;
+
+  // integration time
+  for (int j = 0; j < 7; j++)
+  {
+    PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+    i++; i++;
+    PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+    i++; i++;
+  }
+
+  // Set SPEC_ST to low
+  //digitalWrite(SPEC_ST, LOW);
+  PORT->Group[PORTA].OUTCLR.reg = PORT_PA05;
+  // Sample for a period of time
+  for (int j = 0; j < 87; j++)
+  {
+    PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+    i++; i++;
+    PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+    i++; i++;
+  }
+
+  // Read from SPEC_VIDEO
+  for (int j = 0; j < 288; j++)
+  {
+    data[j] = analogRead(SPEC_VIDEO);
+    PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+    i++; i++;
+    PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+    i++; i++;  
+  }
+  PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+  i++; i++;  
+}
 
 void readSpectrometer(uint16_t *data)
 { // This is from the spec sheet of the spectrometer
@@ -182,7 +316,6 @@ void specThread( void *param ){
   
   float res1[2];
   //float res2[2];
-  spec_t data;
 
 
   while( 1 ){
@@ -191,18 +324,18 @@ void specThread( void *param ){
 
     // take reading from spectrometer, disabling interrupts to ensure proper timing
     taskENTER_CRITICAL();
-    readSpectrometer(data_spec);
+    readSpectrometerFast(data_spec);
     taskEXIT_CRITICAL();
 
     // put data in logging struct
-    data.t = xTaskGetTickCount();
-    memcpy(data.data, data_spec, sizeof(data_spec));
+    spec_data.t = xTaskGetTickCount();
+    memcpy(spec_data.data, data_spec, sizeof(data_spec));
 
     // debug log
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
       printData(data_spec, res1, PTYPE_SPEC);
-      printDataToFC(&data);
+      printDataToFC(&spec_data);
 
       //Serial.print("Spectro 1 Res: ");
       //Serial.print(res1[0]);
