@@ -13,6 +13,7 @@
 #define PTYPE_SPEC 7
 #define PTYPE_CMD  16
 #define PTYPE_QUAT 17
+#define PTYPE_BATT 18
 #define PTYPE_PACKET 99 // compressed packet written to logfile
 
 #define PTYPE_PACKET_REQUEST 8 // sent from flight computer to nano pi to request a packet
@@ -126,6 +127,11 @@ struct spec_t {
   // TODO: Add members for bins
 };
 #endif
+
+struct batt_t {
+  uint16_t;
+  uint16_t data[BATT_MEASUREMENTS];
+};
 
 // not a packet type, used in the groundstation firmware to hold the extra radio receive info
 struct rxtlm_t {

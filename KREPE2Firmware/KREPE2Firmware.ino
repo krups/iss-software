@@ -235,6 +235,8 @@ IridiumSBD modem(SERIAL_IRD);
 // incoming spectrometer data
 spec_t spec_data;
 
+// incoming battery pack data
+batt_t batt_data;
 
 void printDirectory(SerialCommands* sender, File dir, int numTabs);
 
@@ -439,7 +441,9 @@ static void BSMSThread(void *pvParameters)
       // }
       // #endif
 
+      memset((uint8_t*)(&batt_data), 0, sizeof(batt_t));
       memset((uint8_t*)(&spec_data), 0, sizeof(spec_t));
+      uint8_t *b = (unint8_t*)(&batt_data);
       uint8_t *p = (uint8_t*)(&spec_data);
       int bread = 0;
       uint8_t type = SERIAL_BSMS.read();
@@ -471,6 +475,34 @@ static void BSMSThread(void *pvParameters)
         #endif 
 
         
+      }
+	    
+      if( type == PTYPE_BATT ){
+
+        #ifdef DEBUG_SPEC
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
+          Serial.println("ptype is right");
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+
+        while(bread < sizeof(batt_t)){
+          if(SERIAL_BSMS.available()) {
+            *b = SERIAL_BSMS.read();
+            b++;
+            bread++;
+          } 
+        }
+
+        #ifdef DEBUG_SPEC
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 10 ) == pdTRUE ) {
+          Serial.println("read");
+          Serial.print(bread); Serial.println(" bytes from batt");
+          printData(batt_data.data);
+          xSemaphoreGive( dbSem );
+        }
+        #endif 
+
       }
       // for(int i = 0; i < 288; i++){
       //   spec[i] = SERIAL_PI.read();
