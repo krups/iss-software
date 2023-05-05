@@ -27,9 +27,9 @@
 #define SERIAL_FC    Serial1
 
 spec_t spec_data;
-uint16_t batt_data[BATT_MEASUREMENTS];
-int address = 0x0B;
-uint16_t reading, cell_1, cell_2, cell_3, pack, current;
+batt_t batt_data;
+uint16_t data_batt[BATT_MEASUREMENTS];
+uint8_t address = 0x0B;
 
 // freertos task handles
 TaskHandle_t Handle_specTask;
@@ -40,31 +40,32 @@ TaskHandle_t Handle_batTask;
 SemaphoreHandle_t dbSem; // serial debug logging
 SemaphoreHandle_t specBufSem; // access to spectrometer data buffer
 SemaphoreHandle_t batBufSem;  // access to battery data buffer
+SemaphoreHandle_t s1Sem; // access to serial 1
 
 // spectrometer variables
 uint16_t data_spec[NUM_SPEC_CHANNELS]; // Define an array for the data read by the spectrometer
 int multipliers_1[NUM_SPEC_CHANNELS] = {0}; // Define an array for the coefficients of the simpson's rule
 float const coeff = ((850.0 - 340.0) / (NUM_SPEC_CHANNELS - 1) / 3); // Initial coefficient for the simpson's rule
 
-void get_voltage1(){
-  Serial.println("collect voltage of cell 1:");
+uint16_t get_voltage1(){
+  uint16_t reading = 0;
   Wire.beginTransmission(address);
   Wire.write(0x3F);
   Wire.endTransmission();
   Wire.requestFrom(address, 2);
-   if(2 <= Wire.available())    // if 3 bytes were received
-  {
+  //if(2 <= Wire.available())    // if 3 bytes were received
+  //{
+    myDelayMs(10);
     reading = Wire.read();  // receive high byte (overwrites previous reading)
     reading = reading << 8;    // shift high byte to be high 8 bits
     reading += Wire.read(); // receive low byte as lower 8 bits
     reading = reading << 8; 
-    Serial.println(reading);   // print the reading
-    batt_data[0] = reading;
-  } 
+  //} 
+  return reading;
 }
 
-void get_voltage2(){
-  Serial.println("collect voltage of cell 2:");
+uint16_t get_voltage2(){
+  uint16_t reading = 0;
   Wire.beginTransmission(address);
   Wire.write(0x3E);
   Wire.endTransmission();
@@ -75,13 +76,12 @@ void get_voltage2(){
     reading = reading << 8;    // shift high byte to be high 8 bits
     reading += Wire.read(); // receive low byte as lower 8 bits
     reading = reading << 8; 
-    Serial.println(reading);   // print the reading
-    batt_data[1] = reading;
   } 
+  return reading;
 }
 
-void get_voltage3(){
-  Serial.println("collect voltage of cell 3:");
+uint16_t get_voltage3(){
+  uint16_t reading = 0;
   Wire.beginTransmission(address);
   Wire.write(0x3D);
   Wire.endTransmission();
@@ -92,13 +92,12 @@ void get_voltage3(){
     reading = reading << 8;    // shift high byte to be high 8 bits
     reading += Wire.read(); // receive low byte as lower 8 bits
     reading = reading << 8; 
-    Serial.println(reading);   // print the reading
-    batt_data[2] = reading;
   } 
+  return reading;
 }
 
-void get_total_voltage(){
-  Serial.println("collect total voltage:");
+uint16_t get_total_voltage(){
+  uint16_t reading = 0;
   Wire.beginTransmission(address);
   Wire.write(0x09);
   Wire.endTransmission();
@@ -109,32 +108,30 @@ void get_total_voltage(){
     reading = reading << 8;    // shift high byte to be high 8 bits
     reading += Wire.read(); // receive low byte as lower 8 bits
     reading = reading << 8; 
-    Serial.println(reading);   // print the reading
-    batt_data[3] = reading;
   } 
+  return reading;
 }
 
-void get_current(){
-  Serial.println("Collect Current:");
+uint16_t get_current(){
+  uint16_t reading = 0;
   Wire.beginTransmission(address);
   Wire.write(0x0B);
   Wire.endTransmission();
   Wire.requestFrom(address, 2);
-   if(2 <= Wire.available())    // if 3 bytes were received
+  if(2 <= Wire.available())    // if 3 bytes were received
   {
     reading = Wire.read();  // receive high byte (overwrites previous reading)
     reading = reading << 8;    // shift high byte to be high 8 bits
     reading += Wire.read(); // receive low byte as lower 8 bits
     reading = reading << 8; 
-    Serial.println(reading);   // print the reading
-    batt_data[4] = reading;
   } 
+  return reading;
 }
 
 void readSpectrometerFast(uint16_t *data)
 { // from the spec sheet of the spectrometer
   int delayTime = 1; // delay time
-  i = 0;
+  int i = 0;
   // start clock cycle and set start pulse to signal start
   PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
   i++; i++;
@@ -273,10 +270,16 @@ void printData(uint16_t *data, float result[2], int id)
 
 // terrible copy of print data to just use a different serial port 
 // aka to main flight computer over hardware serial as opposed to us serial debug
-void printDataToFC(spec_t *data)
+void printDataToFC(uint8_t *data, uint8_t PTYPE)
 { // Print the NUM_SPEC_CHANNELS data, then print the current time, the current color, and the number of channels.
-  SERIAL_FC.write(PTYPE_SPEC);
-  SERIAL_FC.write((uint8_t*)data, sizeof(spec_t));
+  if(PTYPE == PTYPE_SPEC) {
+    SERIAL_FC.write(PTYPE_SPEC);
+    SERIAL_FC.write((uint8_t*)data, sizeof(spec_t));
+  }
+  else if(PTYPE == PTYPE_BATT) {
+    SERIAL_FC.write(PTYPE_BATT);
+    SERIAL_FC.write((uint8_t*)data, sizeof(batt_t));
+  }
     // SERIAL_FC.print(id);
     // SERIAL_FC.print(',');
     // for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
@@ -331,24 +334,11 @@ void specThread( void *param ){
     spec_data.t = xTaskGetTickCount();
     memcpy(spec_data.data, data_spec, sizeof(data_spec));
 
-    // debug log
-    #ifdef DEBUG
-    if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+    if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
       printData(data_spec, res1, PTYPE_SPEC);
-      printDataToFC(&spec_data);
-
-      //Serial.print("Spectro 1 Res: ");
-      //Serial.print(res1[0]);
-      //Serial.print("/");
-      //Serial.println(res1[1]);
-      // printData(data_spec_1, res1, SPECTROMETER_1_SERIAL);
-      // Serial.print("Spectro 1 Res: ");
-      // Serial.print(res1[0]);
-      // Serial.print("/");
-      // Serial.println(res1[1]);
-      xSemaphoreGive( dbSem );
+      printDataToFC((uint8_t *)&spec_data, PTYPE_SPEC);
+      xSemaphoreGive( s1Sem );
     }
-    #endif
 
     myDelayMs(SPEC_SAMPLE_PERIOD_MS);
   }
@@ -364,8 +354,7 @@ void serialThread( void *param ){
  
 
   while (1)
-  {
-    
+  { 
   }
   
   vTaskDelete (NULL);
@@ -381,23 +370,61 @@ void batThread( void *param ){
 
   while (1) {
     // collect and store battery info
-  }
+    data_batt[0] = get_voltage1(); // cell 1
+    data_batt[1] = get_voltage2(); // cell 2
+    data_batt[2] = get_voltage3(); // cell 3
+    data_batt[3] = get_total_voltage(); // pack
+    data_batt[4] = get_current();   
+
+    // debug log
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      // printData(data_batt, res1, PTYPE_BATT);
+      Serial.print("collect voltage of cell 1:");
+      Serial.println(data_batt[0]);   // print the reading
+      Serial.print("collect voltage of cell 2:");
+      Serial.println(data_batt[1]);   // print the reading
+      Serial.print("collect voltage of cell 3:");
+      Serial.println(data_batt[2]);   // print the reading
+      Serial.print("collect voltage of pack:");
+      Serial.println(data_batt[3]);   // print the reading
+      Serial.print("collect current:");
+      Serial.println(data_batt[4]);   // print the reading
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+
+    // put data in logging struct
+    batt_data.t = xTaskGetTickCount();
+    memcpy(batt_data.data, data_batt, sizeof(data_batt));
+    printDataToFC((uint8_t *)&batt_data, PTYPE_BATT);
+
+    if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
+      // printData(data_batt, res1, PTYPE_BATT);
+      printDataToFC((uint8_t *)&batt_data, PTYPE_BATT);
+      xSemaphoreGive( s1Sem );
+    }
+
+    myDelayMs(BATT_SAMPLE_PERIOD_MS);
+    
+  }    
   
   vTaskDelete (NULL);
 
 }
 
-
 void setup() {
   SERIAL_DEBUG.begin(115200);
   SERIAL_FC.begin(115200);
+
+  Wire.begin();
   
   delay(4000);
 
   pinMode(SPEC_ST, OUTPUT);
-  pinMode(SPEC_TRIG, INPUT);
+  // pinMode(SPEC_TRIG, INPUT);
   pinMode(SPEC_CLK, OUTPUT);
-  pinMode(SPEC_EOS, INPUT);
+  // pinMode(SPEC_EOS, INPUT);
   pinMode(SPEC_VIDEO, INPUT);
   
 
@@ -443,8 +470,14 @@ void setup() {
   if ( batBufSem == NULL ) {
     batBufSem = xSemaphoreCreateMutex();  // create mutex
     if ( ( batBufSem ) != NULL )
-      xSemaphoreGive( ( batBufSem ) );  // make available
+      xSemaphoreGive( ( batBufSem ) );  // make available      
   }
+  // setup serial 1 semaphore
+  if ( s1Sem == NULL ) {
+    s1Sem = xSemaphoreCreateMutex(); // create mutex
+    if ( ( s1Sem ) != NULL )
+      xSemaphoreGive( ( s1Sem ) ); // make available
+  }  
   /**************
   * CREATE TASKS
   **************/
