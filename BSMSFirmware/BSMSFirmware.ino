@@ -9,9 +9,12 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_I2CRegister.h>
 #include <Adafruit_NeoPixel.h>
-#include <FreeRTOS_SAMD51.h>
+#include <FreeRTOS_SAMD21.h>
 //#include <ArduinoJson.h>
 #include <semphr.h>
+
+#define SPEC_SATURATION 700
+#define SPEC_UNDEREXPOSED 600
 
 #define DEBUG 1
 #ifdef DEBUG
@@ -43,6 +46,8 @@ SemaphoreHandle_t batBufSem;  // access to battery data buffer
 SemaphoreHandle_t s1Sem; // access to serial 1
 
 // spectrometer variables
+volatile unsigned long c= 0;
+unsigned long delayTime = 100; // integration time
 uint16_t data_spec[NUM_SPEC_CHANNELS]; // Define an array for the data read by the spectrometer
 int multipliers_1[NUM_SPEC_CHANNELS] = {0}; // Define an array for the coefficients of the simpson's rule
 float const coeff = ((850.0 - 340.0) / (NUM_SPEC_CHANNELS - 1) / 3); // Initial coefficient for the simpson's rule
@@ -128,38 +133,46 @@ uint16_t get_current(){
   return reading;
 }
 
+void quickDelay(unsigned int val){
+//val *= 10;
+ while(val>1){
+  c--;
+  val--;
+ }
+}
+
 void readSpectrometerFast(uint16_t *data)
 { // from the spec sheet of the spectrometer
-  int delayTime = 1; // delay time
   int i = 0;
   // start clock cycle and set start pulse to signal start
-  PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+  PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
   i++; i++;
-  PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+  PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
   i++; i++;
-  PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+  PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
   //digitalWrite(SPEC_ST, HIGH);
-  PORT->Group[PORTA].OUTSET.reg = PORT_PA05;
+  PORT->Group[PORTB].OUTSET.reg = PORT_PB10;
   i++; i++;
 
   // integration time
-  for (int j = 0; j < 7; j++)
+  for (int j = 0; j < 7+delayTime; j++)
   {
-    PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+    
+    PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
     i++; i++;
-    PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+    PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
     i++; i++;
   }
 
   // Set SPEC_ST to low
   //digitalWrite(SPEC_ST, LOW);
-  PORT->Group[PORTA].OUTCLR.reg = PORT_PA05;
+  PORT->Group[PORTB].OUTCLR.reg = PORT_PB10;
   // Sample for a period of time
   for (int j = 0; j < 87; j++)
   {
-    PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+    PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
     i++; i++;
-    PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+    PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
     i++; i++;
   }
 
@@ -167,19 +180,87 @@ void readSpectrometerFast(uint16_t *data)
   for (int j = 0; j < 288; j++)
   {
     data[j] = analogRead(SPEC_VIDEO);
-    PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+    PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
     i++; i++;
-    PORT->Group[PORTA].OUTCLR.reg = PORT_PA14;
+    PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
     i++; i++;  
   }
-  PORT->Group[PORTA].OUTSET.reg = PORT_PA14;
+  PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
   i++; i++;  
+}
+
+void readSpectrometerFast2(uint16_t *data)
+{// This is from the spec sheet of the spectrometer
+
+    // Start clock cycle and set start pulse to signal start
+    digitalWrite(SPEC_CLK, LOW);
+    quickDelay(delayTime);
+    digitalWrite(SPEC_CLK, HIGH);
+    quickDelay(delayTime);
+    digitalWrite(SPEC_CLK, LOW);
+    digitalWrite(SPEC_ST, HIGH);
+    quickDelay(delayTime);
+
+    // Sample for a period of time
+    for (int i = 0; i < 15; i++)
+    {
+
+        digitalWrite(SPEC_CLK, HIGH);
+        quickDelay(delayTime);
+        digitalWrite(SPEC_CLK, LOW);
+        quickDelay(delayTime);
+    }
+
+    // Set SPEC_ST to low
+    digitalWrite(SPEC_ST, LOW);
+
+    // Sample for a period of time
+    for (int i = 0; i < 85; i++)
+    {
+
+        digitalWrite(SPEC_CLK, HIGH);
+        quickDelay(delayTime);
+        digitalWrite(SPEC_CLK, LOW);
+        quickDelay(delayTime);
+    }
+
+    // One more clock pulse before the actual read
+    digitalWrite(SPEC_CLK, HIGH);
+    quickDelay(delayTime);
+    digitalWrite(SPEC_CLK, LOW);
+    quickDelay(delayTime);
+
+    // Read from SPEC_VIDEO
+    for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
+    {
+
+        data[i] = analogRead(SPEC_VIDEO);
+
+        digitalWrite(SPEC_CLK, HIGH);
+        quickDelay(delayTime);
+        digitalWrite(SPEC_CLK, LOW);
+        quickDelay(delayTime);
+    }
+
+    // Set SPEC_ST to high
+    digitalWrite(SPEC_ST, HIGH);
+
+    // Sample for a small amount of time
+    for (int i = 0; i < 7; i++)
+    {
+
+        digitalWrite(SPEC_CLK, HIGH);
+        quickDelay(delayTime);
+        digitalWrite(SPEC_CLK, LOW);
+        quickDelay(delayTime);
+    }
+
+    digitalWrite(SPEC_CLK, HIGH);
+    quickDelay(delayTime); 
 }
 
 void readSpectrometer(uint16_t *data)
 { // This is from the spec sheet of the spectrometer
-
-    int delayTime = 1; // delay time
 
     // Start clock cycle and set start pulse to signal start
     digitalWrite(SPEC_CLK, LOW);
@@ -248,9 +329,26 @@ void readSpectrometer(uint16_t *data)
     myDelayUs(delayTime);
 }
 
+int arrMax(uint16_t *data, int len) {
+  int mval = 0;
+  for( int i=0; i<len; i++ ){
+    mval = max(mval, data[i]);
+  }
+  return mval;
+}
+
+int countOver( uint16_t* data, int len, int val) {
+  int count = 0;
+  for( int i=0; i<len-1; i++ ){
+    if( data[i] > val )
+      count ++;
+  }
+  return count;
+}
+
 // print out a big line of spectrometer data, and timestamp and the number of channels
 // not final by any means (timestamp first?)
-void printData(uint16_t *data, float result[2], int id)
+void printData(uint16_t *data, bool goFast)
 { // Print the NUM_SPEC_CHANNELS data, then print the current time, the current color, and the number of channels.
     //SERIAL_DEBUG.print(id);
     //SERIAL_DEBUG.print(',');
@@ -260,7 +358,10 @@ void printData(uint16_t *data, float result[2], int id)
         SERIAL_DEBUG.print(data[i]);
         SERIAL_DEBUG.print(',');
     }
-    SERIAL_DEBUG.println(NUM_SPEC_CHANNELS-1);
+    SERIAL_DEBUG.print(data[NUM_SPEC_CHANNELS-1]);
+    SERIAL_DEBUG.print(", ");
+    SERIAL_DEBUG.print(goFast ? "FAST, " : "NORMAL, ");
+    SERIAL_DEBUG.println(delayTime);
     //SERIAL_DEBUG.print(result[0] + result[1]);
     //SERIAL_DEBUG.print(',');
     //SERIAL_DEBUG.print(xTaskGetTickCount());
@@ -316,31 +417,54 @@ void calcIntLoop(uint16_t *data, int *multipliers, float* result)
 /// @brief specThread interfaces with the spectrometer to read the data
 //          and puts it into a shared buffer
 void specThread( void *param ){
-  
-  float res1[2];
+  unsigned long lastLogTime = 0;
+  bool goFast = false;
   //float res2[2];
 
 
   while( 1 ){
-    res1[0] = 0; res1[1] = 0;
-    //res2[0] = 0; res2[1] = 0;
-
     // take reading from spectrometer, disabling interrupts to ensure proper timing
     taskENTER_CRITICAL();
-    readSpectrometerFast(data_spec);
+    //if( goFast )
+      readSpectrometerFast(data_spec);
+    //else
+     // readSpectrometer(data_spec);
     taskEXIT_CRITICAL();
 
-    // put data in logging struct
+    // log at slower rate
     spec_data.t = xTaskGetTickCount();
-    memcpy(spec_data.data, data_spec, sizeof(data_spec));
-
-    if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
-      printData(data_spec, res1, PTYPE_SPEC);
-      printDataToFC((uint8_t *)&spec_data, PTYPE_SPEC);
-      xSemaphoreGive( s1Sem );
+    if ( spec_data.t - lastLogTime > SPEC_SAMPLE_PERIOD_MS ){
+      // put data in logging struct
+      memcpy(spec_data.data, data_spec, sizeof(data_spec));
+      if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
+        printData(data_spec, goFast);
+        printDataToFC((uint8_t *)&spec_data, PTYPE_SPEC);
+        xSemaphoreGive( s1Sem );
+      }
+      lastLogTime = spec_data.t;
     }
 
-    myDelayMs(SPEC_SAMPLE_PERIOD_MS);
+    // exposure adjustment, update 20Hz
+    if( arrMax(data_spec, NUM_SPEC_CHANNELS) > SPEC_SATURATION){
+      if( countOver(data_spec, NUM_SPEC_CHANNELS, SPEC_SATURATION) > 20 ){
+        if( delayTime > 2) delayTime /= 2;
+        if( delayTime==0) delayTime = 2;
+        // else if (!goFast){
+        //   goFast = true;
+        //   delayTime = 50;
+        // }
+
+      }
+    }
+    if( arrMax(data_spec, NUM_SPEC_CHANNELS) < SPEC_UNDEREXPOSED) {
+      if( delayTime < 100000 ) delayTime *= 2;
+      // else if( goFast ) {
+      //   goFast = false;
+      //   delayTime = 20;
+      // }
+    }
+
+    myDelayMs(10);
   }
 
   vTaskDelete (NULL);
@@ -483,7 +607,7 @@ void setup() {
   **************/
   xTaskCreate(specThread, "Radio Control", 1000, NULL, tskIDLE_PRIORITY, &Handle_specTask);
   xTaskCreate(serialThread, "Serial Interface", 1000, NULL, tskIDLE_PRIORITY, &Handle_serTask);
-  xTaskCreate(batThread, "Battery monitoring",  1000, NULL, tskIDLE_PRIORITY, &Handle_batTask);
+  //xTaskCreate(batThread, "Battery monitoring",  1000, NULL, tskIDLE_PRIORITY, &Handle_batTask);
   
   #if DEBUG
   SERIAL_DEBUG.println("Created tasks...");
