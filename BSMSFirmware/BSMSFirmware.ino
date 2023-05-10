@@ -457,7 +457,7 @@ void specThread( void *param ){
       }
     }
     if( arrMax(data_spec, NUM_SPEC_CHANNELS) < SPEC_UNDEREXPOSED) {
-      if( delayTime < 100000 ) delayTime *= 2;
+      if( delayTime < 50000 ) delayTime *= 2;
       // else if( goFast ) {
       //   goFast = false;
       //   delayTime = 20;
@@ -540,11 +540,7 @@ void batThread( void *param ){
 void setup() {
   SERIAL_DEBUG.begin(115200);
   SERIAL_FC.begin(115200);
-
-  Wire.begin();
   
-  delay(4000);
-
   pinMode(SPEC_ST, OUTPUT);
   // pinMode(SPEC_TRIG, INPUT);
   pinMode(SPEC_CLK, OUTPUT);
