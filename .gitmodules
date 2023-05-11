@@ -1,3 +1,6 @@
 [submodule "tools/data-visualization-app"]
 	path = tools/data-visualization-app
 	url = git@github.com:alecsmith2103/data-visualization-app.git
+[submodule "tools/CS-499-Senior-Design"]
+	path = tools/CS-499-Senior-Design
+	url = git@github.com:krups/CS-499-Senior-Design.git

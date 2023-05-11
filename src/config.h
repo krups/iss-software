@@ -1,6 +1,19 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+
+#define MISSION_AMTPS     1
+#define MISSION_LI2200    2
+#define MISSION_SPICA     3
+#define MISSION_CPICA     4
+#define MISSION_REUSE     5
+
+#define MISSION_ID MISSION_AMTPS
+
+#ifndef MISSION_ID 
+#error "Must define MISSION_ID"
+#endif
+
 #define USE_DEBUG_RADIO 1
 #define DEBUG 1 // usb serial debug switch
 #ifdef DEBUG
@@ -8,12 +21,13 @@
   //#define DEBUG_QUEUE 1 // print info on log queue operations
   //#define DEBUG_VERBOSE 1
   //#define DEBUG_BARO 1
+  #define DEBUG_PI 1
   #define DEBUG_IRD 1
   #define DEBUG_LOG 1
   //#define DEBUG_TICK 1
   //#define DEBUG_RADIO 1
   //#define DEBUG_PRESSURE 1
-  #define DEBUG_SPEC 1
+  //#define DEBUG_SPEC 1
   //#define DEBUG_IMU 1
   //#define DEBUG_TC
   //#define DEBUG_MCP_STARTUP
@@ -68,7 +82,7 @@
 
 #define SEND_PACKETS 1 // set 1 for mission
 #define IRIDIUM_PACKET_PERIOD 20000 // milliseconds, send a packet every minute
-#define CHECK_SIGNAL_PERIOD   5000 // milliseconds
+#define CHECK_SIGNAL_PERIOD   10000 // milliseconds
 #define DIAGNOSTICS false// Change this to see diagnostics
 #define SBD_TX_SZ 1960
 
@@ -83,6 +97,18 @@
 
 #define NUM_PRS_CHANNELS      5
 
+#if MISSION_ID == MISSION_AMTPS
+  #define PRS1_ADDRESS          0x78  // i2c address
+  #define PRS1_MAX              160.0 //kpa
+  #define PRS2_ADDRESS          0x78
+  #define PRS2_MAX              160.0 //kpa
+  #define PRS3_ADDRESS          0x78
+  #define PRS3_MAX              160.0 //kpa
+  #define PRS4_ADDRESS          0x78
+  #define PRS4_MAX              160.0 //kpa
+  #define PRS5_ADDRESS          0x78
+  #define PRS5_MAX              160.0 //kpa
+#endif
 // the logfilename to use in the format [A-Z]{3}[0-9]{2}.CSV
 // see https://regex101.com/
 #define LOGFILE_NAME              "LG000.DAT"
@@ -90,8 +116,8 @@
 
 // pi buffer configuration
 // 5 lines of 200 chars each max string length
-#define  PI_BUFFER_LINES 10
-#define  PI_LINE_SIZE    300
+#define  PI_BUFFER_LINES 3
+#define  PI_LINE_SIZE    200
 
 // radio buffer configuration
 #define RADIO_TX_BUFSIZE 1024
@@ -103,8 +129,6 @@
 // log buffer size in bytes (how many to accumulate before a write)
 #define LOGBUF_BLOCK_SIZE         4096              // 32768 / 32
 #define LOGBUF_FULL_SIZE    LOGBUF_BLOCK_SIZE - 1960 // compressed iridium packet gauranteed to fit
-
-#define BLZ_HASH_BITS 12
 
 // for debug radio
 #define TLM_SEND_PERIOD   5000 // in scheduler ticks (should be 1ms)

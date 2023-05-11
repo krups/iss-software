@@ -24,10 +24,10 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
     return ERR_SD_BUSY;
   }
 
-  if ( xSemaphoreTake( ledSem, ( TickType_t ) 5 ) == pdTRUE ) {
-    ledColor( ERR_4 );
-    xSemaphoreGive( ledSem );
-  }
+  // if ( xSemaphoreTake( ledSem, ( TickType_t ) 5 ) == pdTRUE ) {
+  //   ledColor( ERR_4 );
+  //   xSemaphoreGive( ledSem );
+  // }
 
 //  #if DEBUG
 //  if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -224,10 +224,10 @@ int sample_datfile(uint8_t ptype, int numToSample, unsigned char *output)
 //  }
 //  #endif
 
-  if ( xSemaphoreTake( ledSem, ( TickType_t ) 5 ) == pdTRUE ) {
-    ledColor( OK );
-    xSemaphoreGive( ledSem );
-  }
+  // if ( xSemaphoreTake( ledSem, ( TickType_t ) 5 ) == pdTRUE ) {
+  //   ledColor( OK );
+  //   xSemaphoreGive( ledSem );
+  // }
 
   // return number of bytes written to buffer;
   return outputPos;

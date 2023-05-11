@@ -157,6 +157,7 @@ int ptxBuf2LineSize[PI_BUFFER_LINES];
 int  ptxActiveBuf = PIBUF1;
 volatile bool   ptxBuf1Full = false;
 volatile bool   ptxBuf2Full = false;
+packet_t piPacket; // for data coming back from the pi
 
 // receive and send buffers for iridium transmission
 //uint8_t rbuf[RBUF_SIZE];
@@ -172,7 +173,7 @@ static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data
 volatile uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
-volatile bool radlog_tc = true, radlog_prs = false, radlog_imu = true, radlog_quat = true;
+volatile bool radlog_tc = false, radlog_prs = false, radlog_imu = false, radlog_quat = false;
 volatile bool radlog_gga = false, radlog_rmc = false, radlog_acc = false;
 #endif
 
@@ -188,7 +189,7 @@ volatile uint8_t activeLog = 1;   // which buffer should be used fo writing, 1 o
 volatile bool gb1Full = false, gb2Full = false;
 
 // variables relating to coordinating the sending of packets and iridium modem signal status
-packet_t packet, piPacket; // private to the packet build thread
+packet_t packet; // private to the packet build thread
 uint8_t buf[SBD_TX_SZ]; // private to the iridium sending thread
 volatile bool globalDeploy = false;
 volatile bool irSig = 0;
@@ -220,11 +221,11 @@ Adafruit_NeoPixel led(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 // honeywell pressure sensor objects
 // create Honeywell_ABP instances
-Honeywell_ABP ps1(0x38, 0, 103.4, "kpa");
-Honeywell_ABP ps2(0x38, 0, 103.4, "kpa");
-Honeywell_ABP ps3(0x38, 0, 103.4, "kpa");
-Honeywell_ABP ps4(0x38, 0, 103.4, "kpa");
-Honeywell_ABP ps5(0x78, 0, 160.0, "kpa");
+Honeywell_ABP ps1(PRS1_ADDRESS, 0, PRS1_MAX, "kpa");
+Honeywell_ABP ps2(PRS2_ADDRESS, 0, PRS2_MAX, "kpa");
+Honeywell_ABP ps3(PRS3_ADDRESS, 0, PRS3_MAX, "kpa");
+Honeywell_ABP ps4(PRS4_ADDRESS, 0, PRS4_MAX, "kpa");
+Honeywell_ABP ps5(PRS5_ADDRESS, 0, PRS5_MAX, "kpa");
 
 //  high g accel
 H3LIS100 highg = H3LIS100(0x1234); // 0x1234 is an arbitrary sensor ID, not an I2C address
@@ -450,12 +451,12 @@ static void BSMSThread(void *pvParameters)
 
       if( type == PTYPE_SPEC ){
 
-        #ifdef DEBUG_SPEC
-        if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
-          Serial.println("ptype is right");
-          xSemaphoreGive( dbSem );
-        }
-        #endif
+        // #ifdef DEBUG_SPEC
+        // if ( xSemaphoreTake( dbSem, ( TickType_t ) 50 ) == pdTRUE ) {
+        //   Serial.println("ptype is right");
+        //   xSemaphoreGive( dbSem );
+        // }
+        // #endif
 
         while(bread < sizeof(spec_t)){
           if(SERIAL_BSMS.available()) {
@@ -467,9 +468,9 @@ static void BSMSThread(void *pvParameters)
 
         #ifdef DEBUG_SPEC
         if ( xSemaphoreTake( dbSem, ( TickType_t ) 10 ) == pdTRUE ) {
-          Serial.println("read");
+          Serial.print("read ");
           Serial.print(bread); Serial.println(" bytes from spec");
-          printData(spec_data.data);
+          //printData(spec_data.data);
           xSemaphoreGive( dbSem );
         }
         #endif 
@@ -477,16 +478,18 @@ static void BSMSThread(void *pvParameters)
         // try to write this data to the log buffer
         writeToLogBuf(PTYPE_SPEC, &spec_data, sizeof(spec_t));
 
+        // try to write to pi
+        //writeToPtxBuf(PTYPE_SPEC, &spec_data, sizeof(spec_t));
       }
 	    
       if( type == PTYPE_BATT ){
 
-        #ifdef DEBUG_SPEC
-        if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
-          Serial.println("ptype is right");
-          xSemaphoreGive( dbSem );
-        }
-        #endif
+        // #ifdef DEBUG_BATT
+        // if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
+        //   Serial.println("ptype is right");
+        //   xSemaphoreGive( dbSem );
+        // }
+        // #endif
 
         while(bread < sizeof(batt_t)){
           if(SERIAL_BSMS.available()) {
@@ -496,7 +499,7 @@ static void BSMSThread(void *pvParameters)
           } 
         }
 
-        #ifdef DEBUG_SPEC
+        #ifdef DEBUG_BATT
         if ( xSemaphoreTake( dbSem, ( TickType_t ) 10 ) == pdTRUE ) {
           Serial.println("read");
           Serial.print(bread); Serial.println(" bytes from batt");
@@ -508,10 +511,8 @@ static void BSMSThread(void *pvParameters)
         // try to write this data to the log buffer
         writeToLogBuf(PTYPE_BATT, &batt_data, sizeof(batt_t));
 
+        //writeToPtxBuf(PTYPE_BATT, &batt_data, sizeof(batt_t));
       }
-      // for(int i = 0; i < 288; i++){
-      //   spec[i] = SERIAL_PI.read();
-      // }
     }
 	  
     // data.spec_data = spec;
@@ -526,7 +527,7 @@ static void BSMSThread(void *pvParameters)
 int writeToRadBuf(uint8_t ptype, void* data, size_t size) {
   bool overflow = false;
 
-  if ( xSemaphoreTake( radBufSem, ( TickType_t ) 100 ) == pdTRUE ) {
+  if ( xSemaphoreTake( radBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
 
     if( radioTxBufSize + size + 1 >= RADIO_TX_BUFSIZE ){
       overflow = true;
@@ -584,7 +585,7 @@ int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
 
       // write packet data as plain csv to an entry in the ptxBuf12 list
       // incremennt ptxBuf2 entry size by 1
-      ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size++], ptype, (uint8_t*)data, size );
+      ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size], ptype, (uint8_t*)data, size );
       ptxBuf2LineSize[ptxBuf2Size] = strlen(ptxBuf2[ptxBuf2Size]);
       ptxBuf2Size++;
 
@@ -609,7 +610,12 @@ int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
 static void piThread(void *pvParameters)
 {
   // zero out tx lines and line sizes
-  int i;
+  int i, bread = 0;
+  uint8_t *p;
+  unsigned long ptx_timer = 0;
+  memset((uint8_t*)&piPacket, 0, sizeof(packet_t));
+  piPacket.size = (uint16_t)SBD_TX_SZ;
+
   for( i=0; i<PI_BUFFER_LINES; i++ ){
     memset(ptxBuf1[i], 0, PI_LINE_SIZE);
     memset(ptxBuf2[i], 0, PI_LINE_SIZE);
@@ -622,13 +628,7 @@ static void piThread(void *pvParameters)
 
     // check if we have been asked to send anything to the Pi
     // if there are no lines to send, check later
-    if( !ptxBuf1Full && !ptxBuf2Full ){
-      //vTaskDelay(10);
-      myDelayMs(10);
-      continue;
-    } else {
-      // else there are lines to send 
-
+    if( ptxBuf1Full || ptxBuf2Full ){
       if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
         // if buffer 1 is full, send all the lines that are queued
         if( ptxBuf1Full ){
@@ -638,7 +638,6 @@ static void piThread(void *pvParameters)
           ptxBuf1Size = 0;
           ptxBuf1Full = false;
         }
-        
         // if buffer 2 is full, send all of its lines
         if( ptxBuf2Full ){
           for( i=0; i<ptxBuf2Size; i++ ){
@@ -647,19 +646,58 @@ static void piThread(void *pvParameters)
           ptxBuf2Size = 0;
           ptxBuf2Full = false;
         }
-
         xSemaphoreGive( piBufSem );
       }
     }
 
-
-    // TODO: check if data (a packet) has been sent to us from the Pi
+    // if there are bytes available, its a packet we should send
+    // TODO: add start bytes and checksum to transaction between BSMS and KFC
     if ( SERIAL_PI.available() ){
 
-      // how many bytes are we expecting
-      // read in that many bytes.
+      // memset((uint8_t*)(&batt_data), 0, sizeof(batt_t));
+      // memset((uint8_t*)(&spec_data), 0, sizeof(spec_t));
+      // uint8_t *b = (uint8_t*)(&batt_data);
+      // uint8_t *p = (uint8_t*)(&spec_data);
+      uint8_t type = SERIAL_PI.read();
 
+      bread = 0;
+
+      if( type == PTYPE_PACKET_REQUEST ){
+        ptx_timer = xTaskGetTickCount();
+        p = (uint8_t*)piPacket.data;
+        while(bread < SBD_TX_SZ){
+          if(SERIAL_PI.available()) {
+            *p = SERIAL_PI.read();
+            p++;
+            bread++;
+          } 
+        }
+        ptx_timer = xTaskGetTickCount() - ptx_timer;
+      
+        #ifdef DEBUG_PI
+        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+          Serial.print("PI: packet read took "); Serial.println(ptx_timer);
+          xSemaphoreGive( dbSem );
+        }
+        #endif
+      }
+
+      // try to write this data to the log buffer
+      // TODO: don't try forever
+      writeToLogBuf(PTYPE_PACKET, &piPacket, sizeof(packet_t));
+
+      // send to iridium buffer to be transmitted
+      if ( xSemaphoreTake( irbSem, ( TickType_t )  50 ) == pdTRUE ) {
+        if( !packetReady ){
+          packetReady = true;
+          memcpy(gIrdBuf, piPacket.data, piPacket.size);
+          gPacketSize = piPacket.size;
+        }
+        xSemaphoreGive( irbSem );
+      }
     }
+
+    taskYIELD();
   }
 
   vTaskDelete( NULL );
@@ -2170,7 +2208,7 @@ bool initMCP(int id) {
   bool ok = true;
   uint8_t addr = MCP_ADDRS[id];
   uint8_t tries = 0;
-  uint8_t max_tries = 100;
+  uint8_t max_tries = 10;
 
   #if DEBUG
   SERIAL.print("Starting MCP #");SERIAL.print(id);
@@ -2281,9 +2319,9 @@ static void packetBuildThread( void * pvParameters )
       // put a request into the buffer to go out to the pi
       writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
 
-      #ifdef DEBUG
+      #ifdef DEBUG_PI
       if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-        SERIAL.print("sending packet build request for autobuild");
+        SERIAL.println("PI: sending packet build request");
         xSemaphoreGive( dbSem );
       }
       #endif
@@ -2296,7 +2334,7 @@ static void packetBuildThread( void * pvParameters )
 
     input_size = 0;
     actual_read = 0;
-    packetsToSample = 30; // start with 5, var gets incremented before first use
+    packetsToSample = 10; // start with 5, var gets incremented before first use
     bytesRead = 0;
 
 
@@ -2345,7 +2383,7 @@ static void packetBuildThread( void * pvParameters )
 
     myDelayMs(10);
     // sample some spectro data
-    if( (temp = sample_datfile(PTYPE_SPEC, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+    if( (temp = sample_datfile(PTYPE_SPEC, 1, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
 
     myDelayMs(10);
@@ -2488,7 +2526,7 @@ static void tcThread( void *pvParameters )
 // ptype is a one byte id, where data holds size bytes of a struct
 int writeToLogBuf(uint8_t ptype, void* data, size_t size) {
   // try to write the tc data to the SD log buffer that is available
-  if ( xSemaphoreTake( wbufSem, ( TickType_t ) 10 ) == pdTRUE ) {
+  if ( xSemaphoreTake( wbufSem, ( TickType_t ) 50 ) == pdTRUE ) {
     if( activeLog == 1 ){
       // is this the last data we will put in before considering the
       // buffer full?
@@ -2877,6 +2915,8 @@ void setup() {
   // battery voltage divider
   pinMode(PIN_VBAT, INPUT);
 
+  delay(100);
+
   Wire.begin();
   Wire.setClock(100000); // mcp9600 spec is 1Mhz
 
@@ -2988,16 +3028,16 @@ void setup() {
   /**************
   * CREATE TASKS
   **************/
-  xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
   xTaskCreate(BSMSThread, "BSMS", 512, NULL, tskIDLE_PRIORITY, &Handle_bsmsTask);
   xTaskCreate(irdThread,  "Iridium", 512, NULL, tskIDLE_PRIORITY, &Handle_irdTask);
-  xTaskCreate(prsThread,  "Pressure Measurement", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
+  xTaskCreate(prsThread,  "Pressure", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  xTaskCreate(packetBuildThread, "Default packet building", 512, NULL, tskIDLE_PRIORITY + 1, &Handle_packetBuildTask);
-  xTaskCreate(piThread,  "NanoPi Packet Building", 512, NULL, tskIDLE_PRIORITY, &Handle_piTask);
+  xTaskCreate(packetBuildThread, "Packaging", 1024, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
+  xTaskCreate(piThread,  "NanoPi", 1024, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
-  xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY+3, &Handle_logTask);
+  xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
+  xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
 
   
   //xTaskCreate(taskMonitor, "Task Monitor", 256, NULL, tskIDLE_PRIORITY + 4, &Handle_monitorTask);
