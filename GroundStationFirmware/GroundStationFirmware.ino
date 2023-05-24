@@ -119,6 +119,40 @@ void cmd_5von(SerialCommands *sender)
   writeCommandToRadBuf(cmdToSend);
 }
 
+// serial command handler to trurn paacket sending on
+void cmd_spon(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_SPON;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending Send packets ON command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
+// serial command handler turn packet sending off
+void cmd_spoff(SerialCommands *sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_SPOFF;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("Sending Send packets OFF command");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
 // serial command handler to list files in sd card
 void cmd_5voff(SerialCommands *sender)
 {
@@ -298,6 +332,22 @@ void cmd_radlogontc(SerialCommands* sender)
   writeCommandToRadBuf(cmdToSend);
 }
 
+void cmd_radlogonspec(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_RADLOGON_SPEC;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("setting SPEC radio log to ON");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
 void cmd_radlogonimu(SerialCommands* sender)
 {
   // set all entries to zero (this sets argc to zero)
@@ -403,6 +453,22 @@ void cmd_radlogofftc(SerialCommands* sender)
   #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
     sender->GetSerial()->print("setting TC radio log OFF");
+    xSemaphoreGive( dbSem );
+  }
+  #endif
+
+  writeCommandToRadBuf(cmdToSend); 
+}
+
+void cmd_radlogoffspec(SerialCommands* sender)
+{
+  // set all entries to zero (this sets argc to zero)
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_RADLOGOFF_SPEC;
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("setting SPEC radio log OFF");
     xSemaphoreGive( dbSem );
   }
   #endif
@@ -618,6 +684,8 @@ SerialCommand cmd_5voff_("5voff", cmd_5voff); // turn the photomos off
 SerialCommand cmd_3von_("3von", cmd_3von);   // external 3v3 on
 SerialCommand cmd_3voff_("3voff", cmd_3voff); // external 3v3 off
 
+SerialCommand cmd_spon_("spon", cmd_spon);
+SerialCommand cmd_spoff_("spoff", cmd_spoff);
 
 SerialCommand cmd_setimuper_("setimuperiod", cmd_set_imu_period);
 SerialCommand cmd_settcper_("settcperiod", cmd_set_tc_period);
@@ -630,6 +698,7 @@ SerialCommand cmd_radlogonprs_("logonprs", cmd_radlogonprs);
 SerialCommand cmd_radlogonquat_("logonquat", cmd_radlogonquat);
 SerialCommand cmd_radlogongga_("logongga", cmd_radlogongga);
 SerialCommand cmd_radlogonrmc_("logonrmc", cmd_radlogonrmc);
+SerialCommand cmd_radlogonspec_("logonspec", cmd_radlogonspec);
 
 SerialCommand cmd_radlogofftc_("logofftc", cmd_radlogofftc);
 SerialCommand cmd_radlogoffprs_("logoffprs", cmd_radlogoffprs);
@@ -638,6 +707,7 @@ SerialCommand cmd_radlogoffacc_("logoffacc", cmd_radlogoffacc);
 SerialCommand cmd_radlogoffquat_("logoffquat", cmd_radlogoffquat);
 SerialCommand cmd_radlogoffgga_("logoffgga", cmd_radlogoffgga);
 SerialCommand cmd_radlogoffrmc_("logoffrmc", cmd_radlogoffrmc);
+SerialCommand cmd_radlogoffspec_("logoffspec", cmd_radlogoffspec);
 
 // dispacth a command received from the capsule (if any, could be used as ACK / heartbeat)
 void dispatchCommand(int senderId, cmd_t command )
@@ -1051,6 +1121,9 @@ void serialThread( void *param ){
 
   serial_commands_.AddCommand(&cmd_st_); // set target node
 
+  serial_commands_.AddCommand(&cmd_spon_); // send packets enable/disable
+  serial_commands_.AddCommand(&cmd_spoff_);
+
   serial_commands_.AddCommand(&cmd_setimuper_); // set imu sample period (ms)
   serial_commands_.AddCommand(&cmd_settcper_);  // set tc sample period (ms)
   serial_commands_.AddCommand(&cmd_setprsper_); // set pressure sample period (ms)
@@ -1062,6 +1135,10 @@ void serialThread( void *param ){
   serial_commands_.AddCommand(&cmd_radlogonquat_);
   serial_commands_.AddCommand(&cmd_radlogongga_);
   serial_commands_.AddCommand(&cmd_radlogonrmc_);
+  serial_commands_.AddCommand(&cmd_radlogonspec_);
+  serial_commands_.AddCommand(&cmd_radlogonacc_);
+
+  
 
   // command to DISABLEradio logs of various telemetry
   serial_commands_.AddCommand(&cmd_radlogoffimu_);
@@ -1070,6 +1147,8 @@ void serialThread( void *param ){
   serial_commands_.AddCommand(&cmd_radlogoffquat_);
   serial_commands_.AddCommand(&cmd_radlogoffgga_);
   serial_commands_.AddCommand(&cmd_radlogoffrmc_);
+  serial_commands_.AddCommand(&cmd_radlogoffspec_);
+  serial_commands_.AddCommand(&cmd_radlogoffacc_);
   
   while (1) {
     serial_commands_.ReadSerial();
