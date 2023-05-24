@@ -9,22 +9,44 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_I2CRegister.h>
 #include <Adafruit_NeoPixel.h>
-#include <FreeRTOS_SAMD21.h>
 //#include <ArduinoJson.h>
+
+// set which board this runs on 
+// matt's proof oc concept board is samd21
+// senior design uses sam51 feather
+#define USE_SAMD51 1
+//#define USE_SAMD21 1
+
+// include the right rtos library
+#ifdef USE_SAMD51 
+#include <FreeRTOS_SAMD51.h>
+#elif USE_SAMD21
+#include <FreeRTOS_SAMD21.h>
+#endif
+#if (USE_SAMD21 && USE_SAMD51)
+#error "Cannot define both samd51 and 21"
+#endif
 #include <semphr.h>
 
-#define SPEC_SATURATION 700
-#define SPEC_UNDEREXPOSED 600
 
-#define DEBUG 1
+//#define DEBUG 1
 #ifdef DEBUG
     // more specific debug directives
 #endif
 
-#include "delay_helpers.h" // rtos delay helpers
-#include "config.h"        // project wide defs
-#include "packet.h"        // data packet defs
-#include "pins.h"              // BSMS system pinouts
+// symlinks only work in unix
+#include "src/delay_helpers.h" // rtos delay helpers
+#include "src/config.h"        // project wide defs
+#include "src/packet.h"        // data packet defs
+#include "pins.h"              // BSMS specific system pinouts
+
+#ifdef USE_SAMD51
+#define SPEC_SATURATION 680
+#define SPEC_UNDEREXPOSED 400
+#elif USE_SAMD21
+#define SPEC_SATURATION 700
+#define SPEC_UNDEREXPOSED 500
+#endif
 
 #define SERIAL_DEBUG Serial
 #define SERIAL_FC    Serial1
@@ -52,285 +74,161 @@ uint16_t data_spec[NUM_SPEC_CHANNELS]; // Define an array for the data read by t
 int multipliers_1[NUM_SPEC_CHANNELS] = {0}; // Define an array for the coefficients of the simpson's rule
 float const coeff = ((850.0 - 340.0) / (NUM_SPEC_CHANNELS - 1) / 3); // Initial coefficient for the simpson's rule
 
-uint16_t get_voltage1(){
-  uint16_t reading = 0;
-  Wire.beginTransmission(address);
-  Wire.write(0x3F);
-  Wire.endTransmission();
-  Wire.requestFrom(address, 2);
-  //if(2 <= Wire.available())    // if 3 bytes were received
-  //{
-    myDelayMs(10);
-    reading = Wire.read();  // receive high byte (overwrites previous reading)
-    reading = reading << 8;    // shift high byte to be high 8 bits
-    reading += Wire.read(); // receive low byte as lower 8 bits
-    reading = reading << 8; 
-  //} 
-  return reading;
-}
+// uint16_t get_voltage1(){
+//   uint16_t reading = 0;
+//   Wire.beginTransmission(address);
+//   Wire.write(0x3F);
+//   Wire.endTransmission();
+//   Wire.requestFrom(address, 2);
+//   //if(2 <= Wire.available())    // if 3 bytes were received
+//   //{
+//     myDelayMs(10);
+//     reading = Wire.read();  // receive high byte (overwrites previous reading)
+//     reading = reading << 8;    // shift high byte to be high 8 bits
+//     reading += Wire.read(); // receive low byte as lower 8 bits
+//     reading = reading << 8; 
+//   //} 
+//   return reading;
+// }
 
-uint16_t get_voltage2(){
-  uint16_t reading = 0;
-  Wire.beginTransmission(address);
-  Wire.write(0x3E);
-  Wire.endTransmission();
-  Wire.requestFrom(address, 2);
-   if(2 <= Wire.available())    // if 3 bytes were received
-  {
-    reading = Wire.read();  // receive high byte (overwrites previous reading)
-    reading = reading << 8;    // shift high byte to be high 8 bits
-    reading += Wire.read(); // receive low byte as lower 8 bits
-    reading = reading << 8; 
-  } 
-  return reading;
-}
+// uint16_t get_voltage2(){
+//   uint16_t reading = 0;
+//   Wire.beginTransmission(address);
+//   Wire.write(0x3E);
+//   Wire.endTransmission();
+//   Wire.requestFrom(address, 2);
+//    if(2 <= Wire.available())    // if 3 bytes were received
+//   {
+//     reading = Wire.read();  // receive high byte (overwrites previous reading)
+//     reading = reading << 8;    // shift high byte to be high 8 bits
+//     reading += Wire.read(); // receive low byte as lower 8 bits
+//     reading = reading << 8; 
+//   } 
+//   return reading;
+// }
 
-uint16_t get_voltage3(){
-  uint16_t reading = 0;
-  Wire.beginTransmission(address);
-  Wire.write(0x3D);
-  Wire.endTransmission();
-  Wire.requestFrom(address, 2);
-   if(2 <= Wire.available())    // if 3 bytes were received
-  {
-    reading = Wire.read();  // receive high byte (overwrites previous reading)
-    reading = reading << 8;    // shift high byte to be high 8 bits
-    reading += Wire.read(); // receive low byte as lower 8 bits
-    reading = reading << 8; 
-  } 
-  return reading;
-}
+// uint16_t get_voltage3(){
+//   uint16_t reading = 0;
+//   Wire.beginTransmission(address);
+//   Wire.write(0x3D);
+//   Wire.endTransmission();
+//   Wire.requestFrom(address, 2);
+//    if(2 <= Wire.available())    // if 3 bytes were received
+//   {
+//     reading = Wire.read();  // receive high byte (overwrites previous reading)
+//     reading = reading << 8;    // shift high byte to be high 8 bits
+//     reading += Wire.read(); // receive low byte as lower 8 bits
+//     reading = reading << 8; 
+//   } 
+//   return reading;
+// }
 
-uint16_t get_total_voltage(){
-  uint16_t reading = 0;
-  Wire.beginTransmission(address);
-  Wire.write(0x09);
-  Wire.endTransmission();
-  Wire.requestFrom(address, 2);
-   if(2 <= Wire.available())    // if 3 bytes were received
-  {
-    reading = Wire.read();  // receive high byte (overwrites previous reading)
-    reading = reading << 8;    // shift high byte to be high 8 bits
-    reading += Wire.read(); // receive low byte as lower 8 bits
-    reading = reading << 8; 
-  } 
-  return reading;
-}
+// uint16_t get_total_voltage(){
+//   uint16_t reading = 0;
+//   Wire.beginTransmission(address);
+//   Wire.write(0x09);
+//   Wire.endTransmission();
+//   Wire.requestFrom(address, 2);
+//    if(2 <= Wire.available())    // if 3 bytes were received
+//   {
+//     reading = Wire.read();  // receive high byte (overwrites previous reading)
+//     reading = reading << 8;    // shift high byte to be high 8 bits
+//     reading += Wire.read(); // receive low byte as lower 8 bits
+//     reading = reading << 8; 
+//   } 
+//   return reading;
+// }
 
-uint16_t get_current(){
-  uint16_t reading = 0;
-  Wire.beginTransmission(address);
-  Wire.write(0x0B);
-  Wire.endTransmission();
-  Wire.requestFrom(address, 2);
-  if(2 <= Wire.available())    // if 3 bytes were received
-  {
-    reading = Wire.read();  // receive high byte (overwrites previous reading)
-    reading = reading << 8;    // shift high byte to be high 8 bits
-    reading += Wire.read(); // receive low byte as lower 8 bits
-    reading = reading << 8; 
-  } 
-  return reading;
-}
+// uint16_t get_current(){
+//   uint16_t reading = 0;
+//   Wire.beginTransmission(address);
+//   Wire.write(0x0B);
+//   Wire.endTransmission();
+//   Wire.requestFrom(address, 2);
+//   if(2 <= Wire.available())    // if 3 bytes were received
+//   {
+//     reading = Wire.read();  // receive high byte (overwrites previous reading)
+//     reading = reading << 8;    // shift high byte to be high 8 bits
+//     reading += Wire.read(); // receive low byte as lower 8 bits
+//     reading = reading << 8; 
+//   } 
+//   return reading;
+// }
 
-void quickDelay(unsigned int val){
-//val *= 10;
- while(val>1){
-  c--;
-  val--;
- }
-}
+// void quickDelay(unsigned int val){
+// //val *= 10;
+//  while(val>1){
+//   c--;
+//   val--;
+//  }
+// }
+
+// Spectrometer reading function, to be atomically, without a context switch
+//
+// integration time for SAMD21 running at 48MHz
+// t_integ = (94+delayTime)*271 ns
+//
+// integration time for SAMD51 running at 120 MHz
+// t_integ = (94+delayTime)*58 ns
 
 void readSpectrometerFast(uint16_t *data)
 { // from the spec sheet of the spectrometer
   int i = 0;
   // start clock cycle and set start pulse to signal start
-  PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
-  i++; i++;
-  PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
-  i++; i++;
-  PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
+  PORT->Group[SPEC_CLK_PORT].OUTCLR.reg = SPEC_CLK_PORT_PIN;
+  i++;
+  PORT->Group[SPEC_CLK_PORT].OUTSET.reg = SPEC_CLK_PORT_PIN;
+  i++;
+  PORT->Group[SPEC_CLK_PORT].OUTCLR.reg = SPEC_CLK_PORT_PIN;
   //digitalWrite(SPEC_ST, HIGH);
-  PORT->Group[PORTB].OUTSET.reg = PORT_PB10;
-  i++; i++;
+  PORT->Group[SPEC_ST_PORT].OUTSET.reg = SPEC_ST_PORT_PIN;
+  i++;
 
   // integration time
   for (int j = 0; j < 7+delayTime; j++)
   {
     
-    PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
-    i++; i++;
-    PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
-    i++; i++;
+    PORT->Group[SPEC_CLK_PORT].OUTSET.reg = SPEC_CLK_PORT_PIN;
+    i++;
+    PORT->Group[SPEC_CLK_PORT].OUTCLR.reg = SPEC_CLK_PORT_PIN;
+    i++;
   }
 
   // Set SPEC_ST to low
   //digitalWrite(SPEC_ST, LOW);
-  PORT->Group[PORTB].OUTCLR.reg = PORT_PB10;
-  // Sample for a period of time
+  PORT->Group[SPEC_ST_PORT].OUTCLR.reg = SPEC_ST_PORT_PIN;
+  // Tlp low period of ST pin must be 375/f_clk
   for (int j = 0; j < 87; j++)
   {
-    PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
-    i++; i++;
-    PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
-    i++; i++;
+    PORT->Group[SPEC_CLK_PORT].OUTSET.reg = SPEC_CLK_PORT_PIN;
+    i++;
+    PORT->Group[SPEC_CLK_PORT].OUTCLR.reg = SPEC_CLK_PORT_PIN;
+    i++;
   }
 
   // Read from SPEC_VIDEO
   for (int j = 0; j < 288; j++)
   {
+    PORT->Group[SPEC_CLK_PORT].OUTSET.reg = SPEC_CLK_PORT_PIN;
     data[j] = analogRead(SPEC_VIDEO);
-    PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
-    i++; i++;
-    PORT->Group[PORTA].OUTCLR.reg = PORT_PA12;
-    i++; i++;  
+    PORT->Group[SPEC_CLK_PORT].OUTCLR.reg = SPEC_CLK_PORT_PIN;
+    i++;
   }
-  PORT->Group[PORTA].OUTSET.reg = PORT_PA12;
-  i++; i++;  
+  PORT->Group[SPEC_CLK_PORT].OUTSET.reg = SPEC_CLK_PORT_PIN;
+  i++;
 }
 
-void readSpectrometerFast2(uint16_t *data)
-{// This is from the spec sheet of the spectrometer
 
-    // Start clock cycle and set start pulse to signal start
-    digitalWrite(SPEC_CLK, LOW);
-    quickDelay(delayTime);
-    digitalWrite(SPEC_CLK, HIGH);
-    quickDelay(delayTime);
-    digitalWrite(SPEC_CLK, LOW);
-    digitalWrite(SPEC_ST, HIGH);
-    quickDelay(delayTime);
-
-    // Sample for a period of time
-    for (int i = 0; i < 15; i++)
-    {
-
-        digitalWrite(SPEC_CLK, HIGH);
-        quickDelay(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        quickDelay(delayTime);
-    }
-
-    // Set SPEC_ST to low
-    digitalWrite(SPEC_ST, LOW);
-
-    // Sample for a period of time
-    for (int i = 0; i < 85; i++)
-    {
-
-        digitalWrite(SPEC_CLK, HIGH);
-        quickDelay(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        quickDelay(delayTime);
-    }
-
-    // One more clock pulse before the actual read
-    digitalWrite(SPEC_CLK, HIGH);
-    quickDelay(delayTime);
-    digitalWrite(SPEC_CLK, LOW);
-    quickDelay(delayTime);
-
-    // Read from SPEC_VIDEO
-    for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
-    {
-
-        data[i] = analogRead(SPEC_VIDEO);
-
-        digitalWrite(SPEC_CLK, HIGH);
-        quickDelay(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        quickDelay(delayTime);
-    }
-
-    // Set SPEC_ST to high
-    digitalWrite(SPEC_ST, HIGH);
-
-    // Sample for a small amount of time
-    for (int i = 0; i < 7; i++)
-    {
-
-        digitalWrite(SPEC_CLK, HIGH);
-        quickDelay(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        quickDelay(delayTime);
-    }
-
-    digitalWrite(SPEC_CLK, HIGH);
-    quickDelay(delayTime); 
+uint16_t arrMin(uint16_t *data, int len) {
+  uint16_t mval = 65535;
+  for( int i=0; i<len; i++ ){
+    mval = min(mval, data[i]);
+  }
+  return mval;
 }
 
-void readSpectrometer(uint16_t *data)
-{ // This is from the spec sheet of the spectrometer
-
-    // Start clock cycle and set start pulse to signal start
-    digitalWrite(SPEC_CLK, LOW);
-    myDelayUs(delayTime);
-    digitalWrite(SPEC_CLK, HIGH);
-    myDelayUs(delayTime);
-    digitalWrite(SPEC_CLK, LOW);
-    digitalWrite(SPEC_ST, HIGH);
-    myDelayUs(delayTime);
-
-    // Sample for a period of time
-    for (int i = 0; i < 15; i++)
-    {
-
-        digitalWrite(SPEC_CLK, HIGH);
-        myDelayUs(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        myDelayUs(delayTime);
-    }
-
-    // Set SPEC_ST to low
-    digitalWrite(SPEC_ST, LOW);
-
-    // Sample for a period of time
-    for (int i = 0; i < 85; i++)
-    {
-
-        digitalWrite(SPEC_CLK, HIGH);
-        myDelayUs(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        myDelayUs(delayTime);
-    }
-
-    // One more clock pulse before the actual read
-    digitalWrite(SPEC_CLK, HIGH);
-    myDelayUs(delayTime);
-    digitalWrite(SPEC_CLK, LOW);
-    myDelayUs(delayTime);
-
-    // Read from SPEC_VIDEO
-    for (int i = 0; i < NUM_SPEC_CHANNELS; i++)
-    {
-
-        data[i] = analogRead(SPEC_VIDEO);
-
-        digitalWrite(SPEC_CLK, HIGH);
-        myDelayUs(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        myDelayUs(delayTime);
-    }
-
-    // Set SPEC_ST to high
-    digitalWrite(SPEC_ST, HIGH);
-
-    // Sample for a small amount of time
-    for (int i = 0; i < 7; i++)
-    {
-
-        digitalWrite(SPEC_CLK, HIGH);
-        myDelayUs(delayTime);
-        digitalWrite(SPEC_CLK, LOW);
-        myDelayUs(delayTime);
-    }
-
-    digitalWrite(SPEC_CLK, HIGH);
-    myDelayUs(delayTime);
-}
-
-int arrMax(uint16_t *data, int len) {
-  int mval = 0;
+uint16_t arrMax(uint16_t *data, int len) {
+  uint16_t mval = 0;
   for( int i=0; i<len; i++ ){
     mval = max(mval, data[i]);
   }
@@ -339,11 +237,31 @@ int arrMax(uint16_t *data, int len) {
 
 int countOver( uint16_t* data, int len, int val) {
   int count = 0;
-  for( int i=0; i<len-1; i++ ){
+  for( int i=0; i<len; i++ ){
     if( data[i] > val )
       count ++;
   }
   return count;
+}
+
+uint16_t countUnderOrEqual( uint16_t* data, int len, uint16_t val) {
+  uint16_t count = 0;
+  for( int i=0; i<len; i++ ){
+    if( data[i] <= val )
+      count ++;
+  }
+  return count;
+}
+
+void printSpecPacketToSerial(spec_t data) {
+  SERIAL_DEBUG.print(((float)(data.t)/1000.0)); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.print(data.itime); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.print(data.data[0]); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.print(data.data[1]); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.print(data.data[2]); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.print(data.data[3]); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.print(data.data[4]); SERIAL_DEBUG.print(", ");
+  SERIAL_DEBUG.println(data.data[5]);
 }
 
 // print out a big line of spectrometer data, and timestamp and the number of channels
@@ -413,6 +331,50 @@ void calcIntLoop(uint16_t *data, int *multipliers, float* result)
     result[1] *= coeff;
 }
 
+// nm / bin  = (850nm - 340nm) / 288 bins 
+// bin 1: 340nm - 496, 88 raw bins
+// bins 2-6: 40 raw bins each, 71 nm bandwidth
+// actual binwidth: 2.17 nm
+// 
+// bin1: 340-496nm: bin 0 through bin 72
+// bin2-6, 32 bins wide, 71 nm bin width
+void binSpectrometer( uint16_t *rawData, spec_t *output) {
+  int i,j;
+  float sums[6] = {0,0,0,0,0,0};
+  int thresh[6] = {72,104,136,168,200,232};
+  for( i=0,j=0; i<288; i++ ){
+    sums[j] += rawData[i];
+    if( i > thresh[j] )
+      j++;
+  }
+  
+  sums[0] /= 72.0;
+  sums[1] /= 32.0; sums[2] /= 32.0;
+  sums[3] /= 32.0; sums[4] /= 32.0;
+  sums[5] /= 56.0;
+
+  output->data[0] = (uint8_t)sums[0];
+  output->data[1] = (uint8_t)sums[1];
+  output->data[2] = (uint8_t)sums[2];
+  output->data[3] = (uint8_t)sums[3];
+  output->data[4] = (uint8_t)sums[4];
+  output->data[5] = (uint8_t)sums[5];
+}
+
+// zero mean and rescale to a certain max value
+// in this case, 8 bit representation
+void rescaleSpectrometer(uint16_t *rawData) {
+  float temp[288];
+  for(int i=0;i<288;i++) temp[i] = rawData[i];
+  float aMin = (float)arrMin(rawData, 288);
+  float aMax = (float)arrMax(rawData, 288);
+  for(int i=0;i<288;i++) temp[i] -= aMin;
+  for(int i=0;i<288;i++) temp[i] /= aMax;
+  for(int i=0;i<288;i++) {
+    rawData[i] = (uint16_t)(temp[i]*255);
+    if( rawData[i] > 255 ) rawData[i] = 255;
+  }
+}
 
 /// @brief specThread interfaces with the spectrometer to read the data
 //          and puts it into a shared buffer
@@ -421,47 +383,51 @@ void specThread( void *param ){
   bool goFast = false;
   //float res2[2];
 
+  // readSpec fast creates a 271ns clock period, or a 3.69 MHz clock signal
+  // available integration time ranges from 7 clock cycles (1.897us)
+  // to around 200000+7 clock cycles (54.2ms) when running on the SAMD21 @ 48MHz
+  // the times for running on a 120MHz SAMD51 are different and listed above the
+  // read spectrometer function
+
 
   while( 1 ){
     // take reading from spectrometer, disabling interrupts to ensure proper timing
     taskENTER_CRITICAL();
-    //if( goFast )
-      readSpectrometerFast(data_spec);
-    //else
-     // readSpectrometer(data_spec);
+    readSpectrometerFast(data_spec);
     taskEXIT_CRITICAL();
 
-    // log at slower rate
-    spec_data.t = xTaskGetTickCount();
-    if ( spec_data.t - lastLogTime > SPEC_SAMPLE_PERIOD_MS ){
-      // put data in logging struct
-      memcpy(spec_data.data, data_spec, sizeof(data_spec));
-      if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
-        printData(data_spec, goFast);
-        printDataToFC((uint8_t *)&spec_data, PTYPE_SPEC);
-        xSemaphoreGive( s1Sem );
-      }
-      lastLogTime = spec_data.t;
-    }
+    spec_data.itime = delayTime;
 
-    // exposure adjustment, update 20Hz
+    // exposure adjustment, update 20Hz, operate on raw data, before binning
     if( arrMax(data_spec, NUM_SPEC_CHANNELS) > SPEC_SATURATION){
       if( countOver(data_spec, NUM_SPEC_CHANNELS, SPEC_SATURATION) > 20 ){
         if( delayTime > 2) delayTime /= 2;
         if( delayTime==0) delayTime = 2;
-        // else if (!goFast){
-        //   goFast = true;
-        //   delayTime = 50;
-        // }
-
       }
     }
     if( arrMax(data_spec, NUM_SPEC_CHANNELS) < SPEC_UNDEREXPOSED) {
-      if( delayTime < 50000 ) delayTime *= 2;
-      // else if( goFast ) {
-      //   goFast = false;
-      //   delayTime = 20;
-      // }
+      // get a similar maximum integration time with different cpu clock speeds
+      // by allowing the feather m4 integration counter to go higher
+      #ifdef USE_SAMD51
+      if( delayTime < 500000 ) delayTime *= 2;
+      #elif USE_SAMD21
+      if( delayTime < 100000 ) delayTime *= 2;
+      #endif
+    }
+
+    rescaleSpectrometer(data_spec);
+    binSpectrometer(data_spec, &spec_data);
+
+    // log at slower rate
+    spec_data.t = xTaskGetTickCount();
+    if ( spec_data.t - lastLogTime > SPEC_SAMPLE_PERIOD_MS ){
+      if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
+        printData(data_spec, goFast);
+        //printSpecPacketToSerial(spec_data);
+        printDataToFC((uint8_t *)&spec_data, PTYPE_SPEC);
+        xSemaphoreGive( s1Sem );
+      }
+      lastLogTime = spec_data.t;
     }
 
     myDelayMs(10);
@@ -486,59 +452,62 @@ void serialThread( void *param ){
 }
 
 
-/// @brief thread monitoring battery info and storing in shared buffer to be sent back 
-//         to the  main flight computer
-void batThread( void *param ){
+// /// @brief thread monitoring battery info and storing in shared buffer to be sent back 
+// //         to the  main flight computer
+// void batThread( void *param ){
   
-  // initialize battery monitoring
+//   // initialize battery monitoring
 
-  while (1) {
-    // collect and store battery info
-    data_batt[0] = get_voltage1(); // cell 1
-    data_batt[1] = get_voltage2(); // cell 2
-    data_batt[2] = get_voltage3(); // cell 3
-    data_batt[3] = get_total_voltage(); // pack
-    data_batt[4] = get_current();   
+//   while (1) {
+//     // collect and store battery info
+//     data_batt[0] = get_voltage1(); // cell 1
+//     data_batt[1] = get_voltage2(); // cell 2
+//     data_batt[2] = get_voltage3(); // cell 3
+//     data_batt[3] = get_total_voltage(); // pack
+//     data_batt[4] = get_current();   
 
-    // debug log
-    #ifdef DEBUG
-    if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
-      // printData(data_batt, res1, PTYPE_BATT);
-      Serial.print("collect voltage of cell 1:");
-      Serial.println(data_batt[0]);   // print the reading
-      Serial.print("collect voltage of cell 2:");
-      Serial.println(data_batt[1]);   // print the reading
-      Serial.print("collect voltage of cell 3:");
-      Serial.println(data_batt[2]);   // print the reading
-      Serial.print("collect voltage of pack:");
-      Serial.println(data_batt[3]);   // print the reading
-      Serial.print("collect current:");
-      Serial.println(data_batt[4]);   // print the reading
-      xSemaphoreGive( dbSem );
-    }
-    #endif
+//     // debug log
+//     #ifdef DEBUG
+//     if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+//       // printData(data_batt, res1, PTYPE_BATT);
+//       Serial.print("collect voltage of cell 1:");
+//       Serial.println(data_batt[0]);   // print the reading
+//       Serial.print("collect voltage of cell 2:");
+//       Serial.println(data_batt[1]);   // print the reading
+//       Serial.print("collect voltage of cell 3:");
+//       Serial.println(data_batt[2]);   // print the reading
+//       Serial.print("collect voltage of pack:");
+//       Serial.println(data_batt[3]);   // print the reading
+//       Serial.print("collect current:");
+//       Serial.println(data_batt[4]);   // print the reading
+//       xSemaphoreGive( dbSem );
+//     }
+//     #endif
 
-    // put data in logging struct
-    batt_data.t = xTaskGetTickCount();
-    memcpy(batt_data.data, data_batt, sizeof(data_batt));
-    printDataToFC((uint8_t *)&batt_data, PTYPE_BATT);
+//     // put data in logging struct
+//     batt_data.t = xTaskGetTickCount();
+//     memcpy(batt_data.data, data_batt, sizeof(data_batt));
+//     printDataToFC((uint8_t *)&batt_data, PTYPE_BATT);
 
-    if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
-      // printData(data_batt, res1, PTYPE_BATT);
-      printDataToFC((uint8_t *)&batt_data, PTYPE_BATT);
-      xSemaphoreGive( s1Sem );
-    }
+//     if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
+//       // printData(data_batt, res1, PTYPE_BATT);
+//       printDataToFC((uint8_t *)&batt_data, PTYPE_BATT);
+//       xSemaphoreGive( s1Sem );
+//     }
 
-    myDelayMs(BATT_SAMPLE_PERIOD_MS);
+//     myDelayMs(BATT_SAMPLE_PERIOD_MS);
     
-  }    
+//   }    
   
-  vTaskDelete (NULL);
+//   vTaskDelete (NULL);
 
-}
+// }
 
 void setup() {
+  #ifdef DEBUG
   SERIAL_DEBUG.begin(115200);
+  #endif
+
   SERIAL_FC.begin(115200);
   
   pinMode(SPEC_ST, OUTPUT);
