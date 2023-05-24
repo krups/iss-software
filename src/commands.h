@@ -46,6 +46,12 @@
 #define CMDID_RADLOGON_ACC        72
 #define CMDID_RADLOGOFF_ACC       73
 
+#define CMDID_RADLOGON_SPEC       74
+#define CMDID_RADLOGOFF_SPEC      75
+
+#define CMDID_SPOFF               76
+#define CMDID_SPON                77
+
 
 // operations on SD card
 #define CMDID_LS                  100

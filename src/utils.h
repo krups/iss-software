@@ -171,18 +171,17 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
 
     // TODO: fix timestamps in printed string
     if( json ){
-      ret = 0;
-      // ret = sprintf(dest,
-      //               "{\"time\": %d, \"lat\": %s, \"lon\": %s, \"alt\": %s, \"hdop\": %s, \"utc\": %d:%d:%d.%d}\n",
-      //               gga.t, // system time
-      //               latBuf,
-      //               lonBuf,
-      //               altBuf,
-      //               hdopBuf,
-      //               gga.time[0],
-      //               gga.time[1],
-      //               gga.time[2],
-      //               gga.time[3]);
+      ret = sprintf(dest,
+                    "{\"id\": \"gga\", \"time\": %d, \"lat\": \"%s\", \"lon\": \"%s\", \"alt\": \"%s\", \"hdop\": \"%s\", \"gps_utc\": \"%d:%d:%d.%d\"}\n",
+                    gga.t, // system time
+                    latBuf,
+                    lonBuf,
+                    altBuf,
+                    hdopBuf,
+                    gga.time[0],
+                    gga.time[1],
+                    gga.time[2],
+                    gga.time[3]);
     } else {
       ret = sprintf(dest,
                     "%d, %d, %d,%d,%d,%d, %s, %s, %s, %s\n",
@@ -210,7 +209,16 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     //dtostrf( rmc.course, 7, 5, crsBuf );
 
     if ( json ){
-      ret = 0; 
+      ret = sprintf(dest,
+                    "{\"id\": \"rmc\", \"time\": %d, \"lat\": \"%s\", \"lon\": \"%s\", \"vel\": \"%s\", \"gps_utc\": \"%d:%d:%d.%d\"}\n",
+                    rmc.t, // system time
+                    latBuf,
+                    lonBuf,
+                    spdBuf,
+                    rmc.time[0],
+                    rmc.time[1],
+                    rmc.time[2],
+                    rmc.time[3]);
     } else {
       ret = sprintf(dest,
                   "%d, %d, %d,%d,%d,%d, %s, %s, %s\n",
@@ -256,10 +264,18 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     spec_t spec;
     memcpy(&spec, data, size);
     if( json ){
-      ret = 0;
-    } else {
       ret = sprintf(dest,
-              "SPEC: TBD\n");
+              "{\"id\": \"spec\", \"time\": %d, \"itime\": %d, \"bin1\": %d, \"bin2\": %d, \"bin3\": %d, \"bin4\": %d, \"bin5\": %d, \"bin6\": %d}\n", 
+              spec.t,
+              spec.itime,
+              spec.data[0],
+              spec.data[1],
+              spec.data[2],
+              spec.data[3],
+              spec.data[4],
+              spec.data[5]);
+    } else {
+      ret = sprintf(dest,"SPEC: %d, %d, %d, %d, %d, %d, %d, %d\n", spec.t, spec.itime, spec.data[0],spec.data[1],spec.data[2],spec.data[3],spec.data[4],spec.data[5]);
     }
   } 
 

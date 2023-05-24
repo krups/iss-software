@@ -7,6 +7,7 @@
 #define MISSION_SPICA     3
 #define MISSION_CPICA     4
 #define MISSION_REUSE     5
+#define MISSION_ROCKSAT   6
 
 #define MISSION_ID MISSION_AMTPS
 
@@ -64,7 +65,7 @@
 
 
 #define TC_SAMPLE_PERIOD_MS   1000
-#define SPEC_SAMPLE_PERIOD_MS 2000
+#define SPEC_SAMPLE_PERIOD_MS 500
 #define IMU_SAMPLE_PERIOD_MS  500
 #define PRS_SAMPLE_PERIOD_MS  1000
 
@@ -95,7 +96,75 @@
 // NUM_TC_CHANNELS + NUM_HF_CHANNELS should always be equal to the total number of MCP9600 chips (TOT_MCP_COUNT)
 #define NUM_TC_CHANNELS       6 // deg celcius
 
+// number of pressure sensors attached to I2C mux
 #define NUM_PRS_CHANNELS      5
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_AMTPS
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_LI220
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_SPICA
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_CPICA
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_REUSE
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_ROCKSAT
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+#define MISSION_AMTPS     1
+#define MISSION_LI2200    2
+#define MISSION_SPICA     3
+#define MISSION_CPICA     4
+#define MISSION_REUSE     5
+#define MISSION_ROCKSAT   6
 
 #if MISSION_ID == MISSION_AMTPS
   #define PRS1_ADDRESS          0x78  // i2c address
@@ -109,6 +178,10 @@
   #define PRS5_ADDRESS          0x78
   #define PRS5_MAX              160.0 //kpa
 #endif
+
+#
+
+
 // the logfilename to use in the format [A-Z]{3}[0-9]{2}.CSV
 // see https://regex101.com/
 #define LOGFILE_NAME              "LG000.DAT"
