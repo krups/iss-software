@@ -174,7 +174,7 @@ volatile uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
 volatile bool radlog_tc = false, radlog_prs = false, radlog_imu = false, radlog_quat = false;
-volatile bool radlog_gga = false, radlog_rmc = false, radlog_acc = false;
+volatile bool radlog_gga = false, radlog_rmc = false, radlog_acc = false, radlog_spec = false;
 #endif
 
 // debug message buffer
@@ -200,6 +200,7 @@ volatile bool autoBuildPi = true;
 volatile uint16_t abint_period = IRIDIUM_PACKET_PERIOD;
 int gPacketSize = 0;
 char gIrdBuf[SBD_TX_SZ];
+bool sendPackets = true;
 
 // for packet compression thread
 uint8_t uc_buf[2*SBD_TX_SZ];  // Uncompressed buffer
@@ -475,11 +476,18 @@ static void BSMSThread(void *pvParameters)
         }
         #endif 
 
+        // set packet time to be that of the main FC processor
+        spec_data.t = (uint16_t) (xTaskGetTickCount() / TIME_SCALE);
+
         // try to write this data to the log buffer
         writeToLogBuf(PTYPE_SPEC, &spec_data, sizeof(spec_t));
 
         // try to write to pi
         //writeToPtxBuf(PTYPE_SPEC, &spec_data, sizeof(spec_t));
+
+        #ifdef USE_DEBUG_RADIO
+        if( radlog_spec ) writeToRadBuf(PTYPE_SPEC, &spec_data, sizeof(spec_t));
+        #endif
       }
 	    
       if( type == PTYPE_BATT ){
@@ -1018,7 +1026,7 @@ void dispatchCommand(int senderId, cmd_t command)
   }
 
   if( command.cmdid == CMDID_RADLOGOFF_GGA ){
-    radlog_gga = true;
+    radlog_gga = false;
 
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -1042,7 +1050,7 @@ void dispatchCommand(int senderId, cmd_t command)
   }
 
   if( command.cmdid == CMDID_RADLOGOFF_RMC ){
-    radlog_rmc = true;
+    radlog_rmc = false;
 
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -1054,7 +1062,7 @@ void dispatchCommand(int senderId, cmd_t command)
   }
 
   if( command.cmdid == CMDID_RADLOGOFF_ACC ){
-    radlog_acc = true;
+    radlog_acc = false;
 
     #ifdef DEBUG
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -1072,6 +1080,54 @@ void dispatchCommand(int senderId, cmd_t command)
     if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
       SERIAL.print("CMD: setting radio ACC log to: ");
       SERIAL.println(radlog_acc);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGON_SPEC ){
+    radlog_spec = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio SPEC log to: ");
+      SERIAL.println(radlog_spec);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_RADLOGOFF_SPEC ){
+    radlog_spec = false;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting radio SPEC log to: ");
+      SERIAL.println(radlog_spec);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_SPOFF ){
+    sendPackets = false;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: sendPackets to: ");
+      SERIAL.println(sendPackets);
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  }
+
+  if( command.cmdid == CMDID_SPON ){
+    sendPackets = true;
+
+    #ifdef DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+      SERIAL.print("CMD: setting sendPackets to: ");
+      SERIAL.println(sendPackets);
       xSemaphoreGive( dbSem );
     }
     #endif
@@ -1416,7 +1472,7 @@ void onRmcUpdate(nmea::RmcData const rmc)
   #endif
 
   // TODO: write data to log buffer
-  data.t = xTaskGetTickCount();
+  data.t = (uint16_t) (xTaskGetTickCount() / TIME_SCALE);
   data.time[0] = (uint16_t)rmc.time_utc.hour;
   data.time[1] = (uint16_t)rmc.time_utc.minute;
   data.time[2] = (uint16_t)rmc.time_utc.second;
@@ -1526,7 +1582,7 @@ void onGgaUpdate(nmea::GgaData const gga)
   //}
   #endif
 
-  data.t = (uint16_t) xTaskGetTickCount() / TIME_SCALE;
+  data.t = (uint16_t) (xTaskGetTickCount() / TIME_SCALE);
   data.time[0] = (uint16_t)gga.time_utc.hour;
   data.time[1] = (uint16_t)gga.time_utc.minute;
   data.time[2] = (uint16_t)gga.time_utc.second;
@@ -1679,7 +1735,7 @@ static void imuThread( void *pvParameters )
   }
   #endif
 
-  if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
+  if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 1000 ) == pdTRUE ) {
     // init BNO055 IMU
     // Try to initialize!
     if (bno08x.begin_I2C()) {
@@ -1737,7 +1793,7 @@ static void imuThread( void *pvParameters )
 
     // try to acquire lock on i2c bus and take measurements
     // from the IMU and high g accelerometer
-    if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 10 ) == pdTRUE ) {
+    if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 50 ) == pdTRUE ) {
       
       // if (bno08x.wasReset()) {
       //   Serial.print("sensor was reset ");
@@ -1791,9 +1847,9 @@ static void imuThread( void *pvParameters )
     last_sample_time = xTaskGetTickCount();
 
     // copy high g acc data (h3lis100) into logging structs
-    accData.t =  last_sample_time / TIME_SCALE;
-    imuData.t =  last_sample_time / TIME_SCALE;
-    quatData.t = last_sample_time / TIME_SCALE;
+    accData.t =  (uint16_t) (last_sample_time / TIME_SCALE);
+    imuData.t =  (uint16_t) (last_sample_time / TIME_SCALE);
+    quatData.t = (uint16_t) (last_sample_time / TIME_SCALE);
 
     accData.data[0] = h3event.acceleration.x * UNIT_SCALE;
     accData.data[1] = h3event.acceleration.y * UNIT_SCALE;
@@ -2121,7 +2177,7 @@ static void irdThread( void *pvParameters )
     // IS IT TIME TO SEND A PACKKAGE??
     if( xTaskGetTickCount() - lastPacketSend > abint_period &&
         (mSq > 0) &&
-        SEND_PACKETS &&
+        sendPackets &&
         pready){
 
       #ifdef DEBUG_IRD
@@ -2334,7 +2390,7 @@ static void packetBuildThread( void * pvParameters )
 
     input_size = 0;
     actual_read = 0;
-    packetsToSample = 10; // start with 5, var gets incremented before first use
+    packetsToSample = 15; // start with 5, var gets incremented before first use
     bytesRead = 0;
 
 
@@ -2383,7 +2439,7 @@ static void packetBuildThread( void * pvParameters )
 
     myDelayMs(10);
     // sample some spectro data
-    if( (temp = sample_datfile(PTYPE_SPEC, 1, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+    if( (temp = sample_datfile(PTYPE_SPEC, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
 
     myDelayMs(10);
@@ -2499,7 +2555,7 @@ static void tcThread( void *pvParameters )
       #endif
 
       // build data struct to send over serial
-      data.t = xTaskGetTickCount() / TIME_SCALE ;
+      data.t = (uint16_t) (xTaskGetTickCount() / TIME_SCALE);
       for( int i=0; i<NUM_TC_CHANNELS; i++ ){
         data.data[i] = (int16_t)(current_temps[i] * UNIT_SCALE);
       }
@@ -2867,16 +2923,6 @@ void setup() {
   #endif
 
 
-  for( int i=0; i<10; i++ ){
-    ledColor(i%5);
-    delay(200);
-  }
-
-  for( int i=0; i<25; i++ ){
-    ledColor(i%5);
-    delay(100);
-  }
-
 
   delay(100);
   SERIAL_GPS.begin(38400); // init gps serial
@@ -3033,7 +3079,7 @@ void setup() {
   xTaskCreate(prsThread,  "Pressure", 1024, NULL, tskIDLE_PRIORITY, &Handle_prsTask);
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
-  xTaskCreate(packetBuildThread, "Packaging", 1024, NULL, tskIDLE_PRIORITY, &Handle_packetBuildTask);
+  xTaskCreate(packetBuildThread, "Packaging", 1024, NULL, tskIDLE_PRIORITY+1, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi", 1024, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
