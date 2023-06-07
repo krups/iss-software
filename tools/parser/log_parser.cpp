@@ -297,8 +297,15 @@ void printImu(imu_t data, std::ostream &stream) {
 }
 
 void printSpec(spec_t data, std::ostream &stream) {
-  stream << "SPEC: placeholder" << std::endl;
-  //stream << "SPEC: " << ((float)data.t) / (1000.0 )  << ", " << data.ch1 << ", " << data.ch2 << std::endl;
+  //stream << "SPEC: placeholder" << std::endl;
+  stream << PTYPE_SPEC << ", " << ((float)data.t) / (1000.0 )  
+        << ", " << data.itime 
+        << ", " << (int)(data.data[0])
+        << ", " << (int)(data.data[1])
+        << ", " << (int)(data.data[2])
+        << ", " << (int)(data.data[3])
+        << ", " << (int)(data.data[4])
+        << ", " << (int)(data.data[5]) << std::endl;
 }
 
 void printPrs(prs_t data, std::ostream &stream) {

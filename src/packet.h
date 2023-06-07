@@ -125,6 +125,7 @@ struct spec_t {
   uint16_t t;
   uint32_t itime;
   uint8_t data[6];
+  uint8_t peaks[6];
 };
 #endif
 

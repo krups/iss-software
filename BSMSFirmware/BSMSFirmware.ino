@@ -12,7 +12,7 @@
 //#include <ArduinoJson.h>
 
 // set which board this runs on 
-// matt's proof oc concept board is samd21
+// matt's proof of concept board is samd21
 // senior design uses sam51 feather
 #define USE_SAMD51 1
 //#define USE_SAMD21 1
@@ -266,7 +266,7 @@ void printSpecPacketToSerial(spec_t data) {
 
 // print out a big line of spectrometer data, and timestamp and the number of channels
 // not final by any means (timestamp first?)
-void printData(uint16_t *data, bool goFast)
+void printData(uint16_t *data)
 { // Print the NUM_SPEC_CHANNELS data, then print the current time, the current color, and the number of channels.
     //SERIAL_DEBUG.print(id);
     //SERIAL_DEBUG.print(',');
@@ -278,7 +278,6 @@ void printData(uint16_t *data, bool goFast)
     }
     SERIAL_DEBUG.print(data[NUM_SPEC_CHANNELS-1]);
     SERIAL_DEBUG.print(", ");
-    SERIAL_DEBUG.print(goFast ? "FAST, " : "NORMAL, ");
     SERIAL_DEBUG.println(delayTime);
     //SERIAL_DEBUG.print(result[0] + result[1]);
     //SERIAL_DEBUG.print(',');
@@ -340,10 +339,15 @@ void calcIntLoop(uint16_t *data, int *multipliers, float* result)
 // bin2-6, 32 bins wide, 71 nm bin width
 void binSpectrometer( uint16_t *rawData, spec_t *output) {
   int i,j;
-  float sums[6] = {0,0,0,0,0,0};
-  int thresh[6] = {72,104,136,168,200,232};
+  float sums[6] = {0,0,0,0,0,0}; // bin sums
+  int thresh[6] = {72,104,136,168,200,232}; // spectral bin boundaries
+  for( i=0; i<6; i++ ){
+    output->peaks[i] = 0; // zero out peaks
+  }
   for( i=0,j=0; i<288; i++ ){
     sums[j] += rawData[i];
+    if( rawData[i] > output->peaks[j] )
+      output->peaks[j] = rawData[i];
     if( i > thresh[j] )
       j++;
   }
@@ -380,8 +384,7 @@ void rescaleSpectrometer(uint16_t *rawData) {
 //          and puts it into a shared buffer
 void specThread( void *param ){
   unsigned long lastLogTime = 0;
-  bool goFast = false;
-  //float res2[2];
+  unsigned long sampleInterval = SPEC_SAMPLE_PERIOD_MS;
 
   // readSpec fast creates a 271ns clock period, or a 3.69 MHz clock signal
   // available integration time ranges from 7 clock cycles (1.897us)
@@ -420,14 +423,17 @@ void specThread( void *param ){
 
     // log at slower rate
     spec_data.t = xTaskGetTickCount();
-    if ( spec_data.t - lastLogTime > SPEC_SAMPLE_PERIOD_MS ){
+    if ( spec_data.t - lastLogTime > sampleInterval ){
       if ( xSemaphoreTake( s1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
-        printData(data_spec, goFast);
+        printData(data_spec);
         //printSpecPacketToSerial(spec_data);
         printDataToFC((uint8_t *)&spec_data, PTYPE_SPEC);
         xSemaphoreGive( s1Sem );
       }
       lastLogTime = spec_data.t;
+      if( lastLogTime > 15000 && sampleInterval < 1000 ){
+        sampleInterval = 1000;
+      }
     }
 
     myDelayMs(10);

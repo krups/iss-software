@@ -3,7 +3,9 @@
 
 /************************************************************************************************
 * Commands
+* sent from the groundstation to a capsule, groundstation does not listen for commands
 */
+
 // power switch for iridium and GPS mosfet,
 #define CMDID_5VPWR_ON          41       // power on iridium
 #define CMDID_5VPWR_OFF         42       // power off iridium

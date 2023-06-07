@@ -9,14 +9,14 @@
 #define MISSION_REUSE     5
 #define MISSION_ROCKSAT   6
 
-#define MISSION_ID MISSION_AMTPS
+#define MISSION_ID MISSION_ROCKSAT
 
 #ifndef MISSION_ID 
 #error "Must define MISSION_ID"
 #endif
 
 #define USE_DEBUG_RADIO 1
-#define DEBUG 1 // usb serial debug switch
+//#define DEBUG 1 // usb serial debug switch
 #ifdef DEBUG
   //#define DEBUG_GPS 1 // print raw gga to serial
   //#define DEBUG_QUEUE 1 // print info on log queue operations
@@ -48,16 +48,12 @@
 #define NETWORK_ID    100
 #define NODE_ADDRESS_STATION    1
 #define NODE_ADDRESS_TESTNODE   2
-#define NODE_ADDRESS_KREPE2_001 3
-#define NODE_ADDRESS_KREPE2_002 4
-#define NODE_ADDRESS_KREPE2_003 5
-#define NODE_ADDRESS_KREPE2_004 6
-#define NODE_ADDRESS_KREPE2_005 7
-#define NODE_ADDRESS_KREPE2_006 8
-#define NODE_ADDRESS_KREPE2_007 9
-
-// TODO: need to replace with compile time flag
-#define NODE_ADDRESS NODE_ADDRESS_KREPE2_007
+#define NODE_ADDRESS_KREPE2_001 3 // krepe - amtps
+#define NODE_ADDRESS_KREPE2_002 4 // krepe - li2200
+#define NODE_ADDRESS_KREPE2_003 5 // krepe - spice
+#define NODE_ADDRESS_KREPE2_004 6 // krepe - cpica
+#define NODE_ADDRESS_KREPE2_005 7 // krepe - reuse
+#define NODE_ADDRESS_KREPE2_006 8 // rocksat
 
 // uncomment to enable GPS
 // gps sample period is default 1Hz
@@ -65,7 +61,7 @@
 
 
 #define TC_SAMPLE_PERIOD_MS   1000
-#define SPEC_SAMPLE_PERIOD_MS 500
+#define SPEC_SAMPLE_PERIOD_MS 250
 #define IMU_SAMPLE_PERIOD_MS  500
 #define PRS_SAMPLE_PERIOD_MS  1000
 
@@ -101,72 +97,15 @@
 
 // TODO: MCORRECT TYPES MMKAY
 #if MISSION_ID == MISSION_AMTPS
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_001
+
   #define TC_1_TYPE MCP9600_TYPE_K
   #define TC_2_TYPE MCP9600_TYPE_K
   #define TC_3_TYPE MCP9600_TYPE_K
   #define TC_4_TYPE MCP9600_TYPE_K
   #define TC_5_TYPE MCP9600_TYPE_K
   #define TC_6_TYPE MCP9600_TYPE_K
-#endif
 
-// TODO: MCORRECT TYPES MMKAY
-#if MISSION_ID == MISSION_LI220
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
-#endif
-
-// TODO: MCORRECT TYPES MMKAY
-#if MISSION_ID == MISSION_SPICA
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
-#endif
-
-// TODO: MCORRECT TYPES MMKAY
-#if MISSION_ID == MISSION_CPICA
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
-#endif
-
-// TODO: MCORRECT TYPES MMKAY
-#if MISSION_ID == MISSION_REUSE
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
-#endif
-
-// TODO: MCORRECT TYPES MMKAY
-#if MISSION_ID == MISSION_ROCKSAT
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
-#endif
-
-#define MISSION_AMTPS     1
-#define MISSION_LI2200    2
-#define MISSION_SPICA     3
-#define MISSION_CPICA     4
-#define MISSION_REUSE     5
-#define MISSION_ROCKSAT   6
-
-#if MISSION_ID == MISSION_AMTPS
   #define PRS1_ADDRESS          0x78  // i2c address
   #define PRS1_MAX              160.0 //kpa
   #define PRS2_ADDRESS          0x78
@@ -179,8 +118,80 @@
   #define PRS5_MAX              160.0 //kpa
 #endif
 
-#
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_LI220
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_002
 
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+
+  // TODO: add pressure sensor definitions
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_SPICA
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_003
+
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+
+  // TODO: add pressure sensor definitions
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_CPICA
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_004
+
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// TODO: MCORRECT TYPES MMKAY
+#if MISSION_ID == MISSION_REUSE
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_005
+
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+#endif
+
+// ROCKSAT
+#if MISSION_ID == MISSION_ROCKSAT
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_006
+
+  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_2_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_K
+  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_5_TYPE MCP9600_TYPE_K
+  #define TC_6_TYPE MCP9600_TYPE_K
+
+  #define PRS1_ADDRESS          0x38  // i2c address
+  #define PRS1_MAX              103.4 //kpa
+  #define PRS2_ADDRESS          0x38
+  #define PRS2_MAX              103.4 //kpa
+  #define PRS3_ADDRESS          0x78
+  #define PRS3_MAX              160.0 //kpa
+  #define PRS4_ADDRESS          0x38
+  #define PRS4_MAX              103.4 //kpa
+  #define PRS5_ADDRESS          0x38
+  #define PRS5_MAX              103.4 //kpa
+#endif
 
 // the logfilename to use in the format [A-Z]{3}[0-9]{2}.CSV
 // see https://regex101.com/

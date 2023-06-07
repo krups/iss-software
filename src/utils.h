@@ -265,7 +265,7 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     memcpy(&spec, data, size);
     if( json ){
       ret = sprintf(dest,
-              "{\"id\": \"spec\", \"time\": %d, \"itime\": %d, \"bin1\": %d, \"bin2\": %d, \"bin3\": %d, \"bin4\": %d, \"bin5\": %d, \"bin6\": %d}\n", 
+              "{\"id\": \"spec\", \"time\": %d, \"itime\": %lu, \"bin1\": %d, \"bin2\": %d, \"bin3\": %d, \"bin4\": %d, \"bin5\": %d, \"bin6\": %d}\n", 
               spec.t,
               spec.itime,
               spec.data[0],

@@ -110,7 +110,9 @@ Adafruit_MCP9600 mcps[6];
 
 // I2C addresses on KREPE flight computer v2.0+
 // Use this to assign proper channel numbering
-const uint8_t MCP_ADDRS[6] = {0x60, 0x61, 0x62, 0x63, 0x64, 0x67};
+// always double check the type of TC per channel 
+const uint8_t MCP_ADDRS[NUM_TC_CHANNELS] = {0x60, 0x61, 0x62, 0x63, 0x64, 0x67};
+const uint8_t MCP_TYPES[NUM_TC_CHANNELS] = {TC_1_TYPE, TC_2_TYPE, TC_3_TYPE, TC_4_TYPE, TC_5_TYPE, TC_6_TYPE};
 
 // freertos task handles
 TaskHandle_t Handle_packetBuildTask; // packet building task
@@ -165,6 +167,8 @@ char sbuf[SBUF_SIZE];
 
 // variables for the debug radio
 #ifdef USE_DEBUG_RADIO
+RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
+#endif
 static uint8_t radioTxBuf[RADIO_TX_BUFSIZE]; // packets queued for sending (telem to groundstation)
 volatile uint16_t radioTxBufSize = 0;
 static uint8_t radioTxBuf2[RADIO_TX_BUFSIZE]; // copy of buffer for the radio to read from 
@@ -172,10 +176,9 @@ volatile uint16_t radioTxBufSize2 = 0;
 static uint8_t radioRxBuf[RADIO_RX_BUFSIZE]; // data 
 volatile uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
-RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, true, &SPI); // debug radio object
 volatile bool radlog_tc = false, radlog_prs = false, radlog_imu = false, radlog_quat = false;
 volatile bool radlog_gga = false, radlog_rmc = false, radlog_acc = false, radlog_spec = false;
-#endif
+
 
 // debug message buffer
 char printBuffer[600];
@@ -418,12 +421,12 @@ static void BSMSThread(void *pvParameters)
   float vbat = 0.0;
   
   #ifdef DEBUG_SPEC
-    if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
-      Serial.print("Sizeof(spec_t) is ");
-      Serial.println(sizeof(spec_t));
-      xSemaphoreGive( dbSem );
-    }
-    #endif
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 5 ) == pdTRUE ) {
+    Serial.print("Sizeof(spec_t) is ");
+    Serial.println(sizeof(spec_t));
+    xSemaphoreGive( dbSem );
+  }
+  #endif
 
 
   while (1)
@@ -1132,9 +1135,16 @@ void dispatchCommand(int senderId, cmd_t command)
     }
     #endif
   }
+
+  // only supported in dump mode
+  if( command.cmdid == CMDID_WIRELESSDUMP ){
+    uint16_t fileNum = *((uint16_t*)(&command.data));
+    sprintf(filename, "LOG%03d.DAT", fileNum);
+    // TODO: finish implementing
+  }
 }
 
-
+#ifdef USE_DEBUG_RADIO
 // radio thread
 // in charge of the RFM69 debug radio 
 // sending packets out as telemetry and receiving commands and 
@@ -1432,6 +1442,7 @@ static void radThread(void *pvParameters)
 
   vTaskDelete( NULL );
 }
+#endif // USE_DEBUG_RADIO
 
 void ledColor(int type) {
   switch (type) {
@@ -2301,7 +2312,7 @@ bool initMCP(int id) {
   SERIAL.println(" bits");
   #endif
 
-  mcps[id].setThermocoupleType(MCP9600_TYPE_K);
+  mcps[id].setThermocoupleType((_themotype)MCP_TYPES[id]);
 
   #ifdef DEBUG_MCP_STARTUP
   SERIAL.print("Thermocouple type set to ");
@@ -2899,7 +2910,9 @@ void setup() {
       delay(1000);
     }
 
-  } else {
+  } 
+  #if MISSION_ID != MISSION_ROCKSAT
+  else {
     //USB->DEVICE.CTRLA.bit.ENABLE = 0;                   // Shutdown the USB peripheral
     //while(USB->DEVICE.SYNCBUSY.bit.ENABLE);             // Wait for synchronization
     
@@ -2914,6 +2927,7 @@ void setup() {
         woke = digitalRead(PIN_EXT_INT);
     }
   }
+  #endif
 
   
 
@@ -3081,7 +3095,9 @@ void setup() {
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
   xTaskCreate(packetBuildThread, "Packaging", 1024, NULL, tskIDLE_PRIORITY+1, &Handle_packetBuildTask);
   xTaskCreate(piThread,  "NanoPi", 1024, NULL, tskIDLE_PRIORITY, &Handle_piTask);
+  #ifdef USE_DEBUG_RADIO
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+  #endif
   xTaskCreate(logThread,  "SD Logging", 1024, NULL, tskIDLE_PRIORITY, &Handle_logTask);
   xTaskCreate(tcThread,   "TC Measurement", 512, NULL, tskIDLE_PRIORITY, &Handle_tcTask);
 
@@ -3094,7 +3110,9 @@ void setup() {
   // error scheduler failed to start
   while(1)
   {
+    #ifdef DEBUG
     SERIAL.println("Scheduler Failed! \n");
+    #endif
     delay(1000);
   }
 
