@@ -20,6 +20,10 @@
 
 #define PTYPE_LS_T 100
 
+#define PTYPE_FILE_START  110
+#define PTYPE_BLOCK_START 111
+#define PTYPE_BLOCK_DATA  112
+
 #define CMD_PAYLOAD_BYTES 11
 
 // type PTYPE_CMD
@@ -144,6 +148,12 @@ struct rxtlm_t {
 // holds a response to the LS command, indicating how many file are on the SD card
 struct ls_t {
   uint16_t numFiles;
+};
+
+// header for data about to be received over radio
+struct file_t {
+  uint8_t num;
+  int blocks;
 };
 
 #endif

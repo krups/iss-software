@@ -16,6 +16,8 @@
 #include <semphr.h>
 #include <RFM69.h>
 #include <SD.h>
+#include "arduino_base64.hpp"
+
 
 //#define PRINT_RX_STATS 1
 
@@ -34,8 +36,8 @@
 
 #define DEBUG 1
 #ifdef DEBUG
-  #define DEBUG_RADIO 1
-  #define DEBUG_SEND 1
+  //#define DEBUG_RADIO 1
+  //#define DEBUG_SEND 1
 #endif
 
 #define PC_SERIAL Serial // PC connection to send plain text over
@@ -61,7 +63,12 @@ static uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 RFM69 radio(PIN_RADIO_SS, PIN_RADIO_INT, false, &SPI); // debug radio object
 
-char printBuffer[1000];
+unsigned long incomingBytes = 0;
+unsigned long receivedBytes = 0;
+
+char printBuffer[500];
+char base64output[81];
+
 
 // for printing data to serial
 StaticJsonDocument<1024> doc;
@@ -641,11 +648,39 @@ void cmd_pisend_packet(SerialCommands* sender)
   writeCommandToRadBuf(cmdToSend);
 }
 
+void cmd_wireless_dump(SerialCommands* sender)
+{
+  memset(&cmdToSend, 0, sizeof(cmd_t));
+  cmdToSend.cmdid = CMDID_WIRELESSDUMP;
+
+  uint16_t *filenum = ((uint16_t*)(cmdToSend.data));
+
+  char* str = sender->Next();
+	if (str == NULL) {
+    // if no arg supplied, set target node to TESTNODE
+		*filenum = 0;
+	}
+
+	if ( (*filenum = atoi(str)) == 0 ){
+    *filenum = 0;
+  } 
+
+  #ifdef DEBUG
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    sender->GetSerial()->print("asking for wireless dump of file ");
+    sender->GetSerial()->println(*filenum);
+    xSemaphoreGive( dbSem );
+  }
+  #endif 
+
+  writeCommandToRadBuf(cmdToSend);
+}
+
 
 // This is the default handler, and gets called when no other command matches. 
 void cmd_help(SerialCommands* sender, const char* cmd)
 {
-  #ifdef DEBUG_SEND
+  #ifdef DEBUG
   if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
     sender->GetSerial()->print("Unrecognized command [");
     sender->GetSerial()->print(cmd);
@@ -686,6 +721,8 @@ SerialCommand cmd_3voff_("3voff", cmd_3voff); // external 3v3 off
 
 SerialCommand cmd_spon_("spon", cmd_spon);
 SerialCommand cmd_spoff_("spoff", cmd_spoff);
+
+SerialCommand cmd_wireless_dump_("dump", cmd_wireless_dump);
 
 SerialCommand cmd_setimuper_("setimuperiod", cmd_set_imu_period);
 SerialCommand cmd_settcper_("settcperiod", cmd_set_tc_period);
@@ -820,6 +857,25 @@ void radioThread( void *param ){
         // }
         // #endif
 
+        // if we are in the process of a file dump, handle this case first
+        if( incomingBytes > 0 ){
+          receivedBytes += radioRxBufSize;
+          incomingBytes -= radioRxBufSize;
+
+          base64::encode(radioRxBuf, radioRxBufSize, base64output);
+          Serial.print(base64output);
+          
+          // indicate that we have consumed the entire buffer
+          goon = false;
+          radrxbufidx = radioRxBufSize;
+
+          // check if this was the final reception of the file
+          if( incomingBytes == 0 ){
+            Serial.println("\"}");
+          }
+          break;
+        }
+
         // receiving a command
         if( radioRxBuf[radrxbufidx] == PTYPE_CMD ){
           if( sizeof(cmd_t) > (radioRxBufSize - radrxbufidx + 1)){
@@ -919,7 +975,20 @@ void radioThread( void *param ){
             writePacketAsPlaintext(printBuffer, PTYPE_LS_T, &radioRxBuf[radrxbufidx+1], sizeof(ls_t), true);
             radrxbufidx += sizeof(ls_t) + 1;
           }
-        } 
+        }
+
+        else if( radioRxBuf[radrxbufidx] == PTYPE_FILE_START ){
+          if( sizeof(file_t) > (radioRxBufSize - radrxbufidx + 1)) {
+            goon = false;
+          } else {
+            writePacketAsPlaintext(printBuffer, PTYPE_FILE_START, &radioRxBuf[radrxbufidx+1], sizeof(file_t), true);
+            file_t file;
+            memcpy(&file,&radioRxBuf[radrxbufidx+1],sizeof(file_t));
+            incomingBytes = file.blocks*(LOGBUF_BLOCK_SIZE);
+            receivedBytes = 0;
+            radrxbufidx += sizeof(file_t) + 1;
+          }
+        }
 
         // uh oh we have probably lost track of where we are in the buffer
         else {
@@ -945,6 +1014,9 @@ void radioThread( void *param ){
             Serial.write(printBuffer);
             xSemaphoreGive( dbSem );
           }
+
+          if( incomingBytes ) Serial.print("{\"id\": \"filedata\",\"data\": \"");
+
           //#endif
         }
 
@@ -1096,7 +1168,7 @@ void radioThread( void *param ){
     } // end if radioTxBufSize > 0
     //end new
   
-    myDelayMs(10);
+    //myDelayMs(10);
   }
 
   vTaskDelete (NULL);
@@ -1120,6 +1192,8 @@ void serialThread( void *param ){
   serial_commands_.AddCommand(&cmd_3voff_);
 
   serial_commands_.AddCommand(&cmd_st_); // set target node
+
+  serial_commands_.AddCommand(&cmd_wireless_dump_); // ask for wireless logfile transfer
 
   serial_commands_.AddCommand(&cmd_spon_); // send packets enable/disable
   serial_commands_.AddCommand(&cmd_spoff_);

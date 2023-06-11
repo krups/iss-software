@@ -178,7 +178,8 @@ volatile uint16_t radioRxBufSize = 0;
 static char radioTmpBuf[RADIO_RX_BUFSIZE]; // for moving fragments of packets
 volatile bool radlog_tc = false, radlog_prs = false, radlog_imu = false, radlog_quat = false;
 volatile bool radlog_gga = false, radlog_rmc = false, radlog_acc = false, radlog_spec = false;
-
+volatile bool doDump = false;
+volatile int fileNum = 0;
 
 // debug message buffer
 char printBuffer[600];
@@ -269,47 +270,55 @@ void initSD(SerialCommands* sender)
 // remove files on SD card
 void cmd_rm(SerialCommands* sender)
 {
-  initSD(sender);
-  File root = SD.open("/");
-  clearFiles(sender, root);
-  root.close();
-  sender->GetSerial()->println();
+  if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    initSD(sender);
+    File root = SD.open("/");
+    clearFiles(sender, root);
+    root.close();
+    sender->GetSerial()->println();
+    xSemaphoreGive( sdSem );
+  }
 }
 
 // list files on SD card
 void cmd_ls(SerialCommands* sender)
 {
-  initSD(sender);
-  File root = SD.open("/");
-  printDirectory(sender, root, 0);
-  root.close();
-  sender->GetSerial()->println();
+  if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    initSD(sender);
+    File root = SD.open("/");
+    printDirectory(sender, root, 0);
+    root.close();
+    sender->GetSerial()->println();
+    xSemaphoreGive( sdSem );
+  }
+  xSemaphoreGive( dbSem );
 }
 
 void cmd_dump(SerialCommands* sender)
 {
-	//Note: Every call to Next moves the pointer to next parameter
-
-	char* file_str = sender->Next();
-	if (file_str == NULL)
-	{
-		sender->GetSerial()->println("Need filename as argument");
-		return;
-	}
-	
-	initSD(sender);
-  
-  File dataFile = SD.open(file_str);
-  if (dataFile) {
-    while (dataFile.available()) {
-      sender->GetSerial()->write(dataFile.read());
+  if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+    char* file_str = sender->Next();
+    if (file_str == NULL)
+    {
+      sender->GetSerial()->println("Need filename as argument");
+      return;
     }
-    dataFile.close();
-  } else {
-    sender->GetSerial()->print("error opening ");
-    sender->GetSerial()->println(file_str);
+    
+    initSD(sender);
+    
+    File dataFile = SD.open(file_str);
+    if (dataFile) {
+      while (dataFile.available()) {
+        sender->GetSerial()->write(dataFile.read());
+      }
+      dataFile.close();
+    } else {
+      sender->GetSerial()->print("error opening ");
+      sender->GetSerial()->println(file_str);
+    }
+    sender->GetSerial()->println();
+    xSemaphoreGive( sdSem );
   }
-  sender->GetSerial()->println();
 }
 
 void clearFiles(SerialCommands* sender, File dir) {
@@ -375,8 +384,31 @@ static void dumpThread( void *pvParameters )
   // data dump port (for now)
   SERIAL.begin(115200);
  
-  myDelayMs(5000);
+  myDelayMs(1000);
 
+  // wait indefinitely for the SD mutex
+  while( xSemaphoreTake( sdSem, portMAX_DELAY ) != pdPASS );
+
+  // INIT CARD
+  while (!SD.begin(PIN_SD_CS)) {
+    #if DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      Serial.println("ERROR: sd logging thread couldn't init sd card");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+    myDelayMs(1000);
+  }
+  //else {
+    #if DEBUG
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      Serial.println("SD CARD INIT OK");
+      xSemaphoreGive( dbSem );
+    }
+    #endif
+  //}
+
+  xSemaphoreGive(sdSem);
 
   serial_commands_.SetDefaultHandler(cmd_unrecognized);
 	serial_commands_.AddCommand(&cmd_ls_);
@@ -384,12 +416,86 @@ static void dumpThread( void *pvParameters )
 	serial_commands_.AddCommand(&cmd_dump_);
   
   while (1) {
-    serial_commands_.ReadSerial();
+    if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+      serial_commands_.ReadSerial();
+      xSemaphoreGive( dbSem );
+    }
     if( digitalRead(PIN_EXT_INT) == LOW ){
       myDelayMs(2000);
       if( digitalRead(PIN_EXT_INT) == LOW )
         NVIC_SystemReset();
     }
+
+    if( doDump ){
+
+      File logfile;
+      unsigned long filesize = 0;
+      int numBlocks = 0, i=0, j=0, numChunks = (LOGBUF_BLOCK_SIZE / DUMP_CHUNK_SIZE);
+
+      #ifdef DEBUG
+      Serial.print("asking  for dump of file ");
+      Serial.println(filename);
+      #endif
+
+      if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+
+        // open log file for all telem (single log file configuration)
+        logfile = SD.open(filename, FILE_READ);
+
+        filesize = logfile.size();
+        xSemaphoreGive( sdSem );
+      } else { return; }
+
+      #ifdef DEBUG
+      Serial.print("Filesize is ");
+      Serial.println(filesize);
+      #endif
+      
+      numBlocks = filesize / LOGBUF_BLOCK_SIZE;
+
+      file_t head;
+      head.num = fileNum;
+      head.blocks = numBlocks;
+      writeToRadBuf(PTYPE_FILE_START, &head, sizeof(file_t));
+
+      myDelayMs(4000);
+
+      Serial.print("need ");
+      Serial.print(LOGBUF_BLOCK_SIZE/RADIO_TX_BUFSIZE);
+      Serial.println(" chunks per logbuf block");
+
+      for ( i=0; i<numBlocks; i++ ){
+        Serial.print(".");
+        if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+          logfile = SD.open(filename, FILE_READ);
+          logfile.seek(i*LOGBUF_BLOCK_SIZE);
+          logfile.read(logBuf1, LOGBUF_BLOCK_SIZE);
+          xSemaphoreGive( sdSem );
+        }
+
+        // now iterate through the block and send as radio packets
+
+        // copy to radio buf in 1024 byte chunks
+        for( j=0; j<(LOGBUF_BLOCK_SIZE/RADIO_TX_BUFSIZE); j++ ){ // based on block
+          bool red = false;
+          if ( xSemaphoreTake( radBufSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+            if( radioTxBufSize2 == 0 ){
+              logfile.read(radioTxBuf, 1024);
+              radioTxBufSize = 1024 ;
+              Serial.print("+");
+              red = true;
+            } 
+            xSemaphoreGive( radBufSem );
+          }
+          if( !red ) {
+            j--; 
+          }
+          myDelayMs(1000);
+        }
+      }
+      Serial.println("done");
+    }
+    doDump = false;
   }
 
   vTaskDelete( NULL ); 
@@ -1138,9 +1244,9 @@ void dispatchCommand(int senderId, cmd_t command)
 
   // only supported in dump mode
   if( command.cmdid == CMDID_WIRELESSDUMP ){
-    uint16_t fileNum = *((uint16_t*)(&command.data));
-    sprintf(filename, "LOG%03d.DAT", fileNum);
-    // TODO: finish implementing
+    fileNum = *((uint16_t*)(&command.data));
+    sprintf(filename, "LG%03d.DAT", fileNum);
+    doDump = true;
   }
 }
 
@@ -1206,7 +1312,7 @@ static void radThread(void *pvParameters)
 
     // first get access to SPI bus
     if ( xSemaphoreTake( sdSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-      
+
       // check for any received packets, but only if they will fit in our RX buffer
       if (radio.receiveDone())
       {
@@ -2883,6 +2989,26 @@ void setup() {
 
     ledColor(0);
 
+    // setup sd sem
+    if ( sdSem == NULL ) {
+      sdSem = xSemaphoreCreateMutex();  // create mutex
+      if ( ( sdSem ) != NULL )
+        xSemaphoreGive( ( sdSem ) );  // make available
+    }
+
+    if ( dbSem == NULL ) {
+      dbSem = xSemaphoreCreateMutex();  // create mutex
+      if ( ( dbSem ) != NULL )
+        xSemaphoreGive( ( dbSem ) );  // make available
+    }
+
+    // setup radio tx buffer  protector
+    if ( radBufSem == NULL ) {
+      radBufSem = xSemaphoreCreateMutex();  // create mutex
+      if ( ( radBufSem ) != NULL )
+        xSemaphoreGive( ( radBufSem ) );  // make available
+    }
+
     // put the radio in reset state
     pinMode(PIN_RADIO_RESET, OUTPUT);
     pinMode(PIN_RADIO_SS, OUTPUT);
@@ -2897,8 +3023,8 @@ void setup() {
 
     delay(2000);
 
-    xTaskCreate(dumpThread, "Data dump", 1024, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
-    //xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+    xTaskCreate(dumpThread, "Data dump", 2048, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
+    xTaskCreate(radThread, "Telem radio", 2048, NULL, tskIDLE_PRIORITY, &Handle_radTask);
     
     // Start the RTOS, this function will never return and will schedule the tasks.
     vTaskStartScheduler();

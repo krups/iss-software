@@ -288,6 +288,17 @@ int writePacketAsPlaintext(char *dest, uint8_t ptype, uint8_t* data, size_t size
     }
   } 
   
+  // file start (wireless dump from a capsule)
+  else if( ptype == PTYPE_FILE_START ){
+    file_t file;
+    memcpy(&file, data, size);
+    if( json ){
+      ret = sprintf(dest, "{\"id\": \"file\",\"num\": %d, \"size\": %d}\n", file.num, file.blocks );
+    } else {
+      ret = sprintf(dest, "LOGFILE #%d, blocks: %lu, anticipated bytes: %lu", file.num, file.blocks, file.blocks * LOGBUF_BLOCK_SIZE);
+    }
+  }
+  
   // unknown 
   else {
     if( json ){
