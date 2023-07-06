@@ -14,8 +14,8 @@
 // set which board this runs on 
 // matt's proof of concept board is samd21
 // senior design uses sam51 feather
-#define USE_SAMD51 1
-//#define USE_SAMD21 1
+//#define USE_SAMD51 1
+#define USE_SAMD21 1
 
 // include the right rtos library
 #ifdef USE_SAMD51 

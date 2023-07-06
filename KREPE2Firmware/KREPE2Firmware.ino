@@ -12,6 +12,7 @@
 #include <Adafruit_MPL3115A2.h>
 #include <Adafruit_BNO08x.h>
 #include <Adafruit_MCP9600.h>
+#include <Adafruit_MCP9601.h>
 #include <Adafruit_SleepyDog.h>
 #include <ArduinoNmeaParser.h>
 #include <SerialCommands.h>
@@ -106,7 +107,11 @@ void onGgaUpdate(nmea::GgaData const);
 #define SERIAL_BSMS Serial1 // to BSMS 
 
 // TC to digital objects
+#ifdef MCP9601
+Adafruit_MCP9601 mcps[6];
+#else
 Adafruit_MCP9600 mcps[6];
+#endif
 
 // I2C addresses on KREPE flight computer v2.0+
 // Use this to assign proper channel numbering
@@ -199,7 +204,7 @@ volatile bool globalDeploy = false;
 volatile bool irSig = 0;
 volatile bool packetReady = 0;
 volatile bool internalBuildPacket = false;
-volatile bool autoBuildInternal = false;
+volatile bool autoBuildInternal = true;
 volatile bool autoBuildPi = true;
 volatile uint16_t abint_period = IRIDIUM_PACKET_PERIOD;
 int gPacketSize = 0;
@@ -430,7 +435,7 @@ static void dumpThread( void *pvParameters )
 
       File logfile;
       unsigned long filesize = 0;
-      int numBlocks = 0, i=0, j=0, numChunks = (LOGBUF_BLOCK_SIZE / DUMP_CHUNK_SIZE);
+      int numBlocks = 0, i=0, j=0;
 
       #ifdef DEBUG
       Serial.print("asking  for dump of file ");
@@ -1883,7 +1888,7 @@ static void imuThread( void *pvParameters )
   }
 
   #ifdef DEBUG
-  if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
+  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
     Serial.print("IMU: init BNO: ");
     Serial.print(bno_ok);
     Serial.print(", BNO accel init: ");
@@ -2080,19 +2085,19 @@ static void prsThread( void *pvParameters )
 
       if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
         select_i2cmux_channel(MUXCHAN_PS1);
-        myDelayUs(100);
+        myDelayMs(1);
         ps1.update();
         select_i2cmux_channel(MUXCHAN_PS2);
-        myDelayUs(100);
+        myDelayMs(1);
         ps2.update();
         select_i2cmux_channel(MUXCHAN_PS3);
-        myDelayUs(100);
+        myDelayMs(1);
         ps3.update();
         select_i2cmux_channel(MUXCHAN_PS4);
-        myDelayUs(100);
+        myDelayMs(1);
         ps4.update();
         select_i2cmux_channel(MUXCHAN_PS5);
-        myDelayUs(100);
+        myDelayMs(1);
         ps5.update();
         xSemaphoreGive( i2c1Sem ); 
       }
@@ -2987,54 +2992,55 @@ void setup() {
 
   if( woke ){
 
-    ledColor(0);
+    // ledColor(0);
 
-    // setup sd sem
-    if ( sdSem == NULL ) {
-      sdSem = xSemaphoreCreateMutex();  // create mutex
-      if ( ( sdSem ) != NULL )
-        xSemaphoreGive( ( sdSem ) );  // make available
-    }
+    // // setup sd sem
+    // if ( sdSem == NULL ) {
+    //   sdSem = xSemaphoreCreateMutex();  // create mutex
+    //   if ( ( sdSem ) != NULL )
+    //     xSemaphoreGive( ( sdSem ) );  // make available
+    // }
 
-    if ( dbSem == NULL ) {
-      dbSem = xSemaphoreCreateMutex();  // create mutex
-      if ( ( dbSem ) != NULL )
-        xSemaphoreGive( ( dbSem ) );  // make available
-    }
+    // if ( dbSem == NULL ) {
+    //   dbSem = xSemaphoreCreateMutex();  // create mutex
+    //   if ( ( dbSem ) != NULL )
+    //     xSemaphoreGive( ( dbSem ) );  // make available
+    // }
 
-    // setup radio tx buffer  protector
-    if ( radBufSem == NULL ) {
-      radBufSem = xSemaphoreCreateMutex();  // create mutex
-      if ( ( radBufSem ) != NULL )
-        xSemaphoreGive( ( radBufSem ) );  // make available
-    }
+    // // setup radio tx buffer  protector
+    // if ( radBufSem == NULL ) {
+    //   radBufSem = xSemaphoreCreateMutex();  // create mutex
+    //   if ( ( radBufSem ) != NULL )
+    //     xSemaphoreGive( ( radBufSem ) );  // make available
+    // }
 
-    // put the radio in reset state
-    pinMode(PIN_RADIO_RESET, OUTPUT);
-    pinMode(PIN_RADIO_SS, OUTPUT);
-    digitalWrite(PIN_RADIO_RESET, HIGH);
-    digitalWrite(PIN_RADIO_SS, HIGH);
+    // // put the radio in reset state
+    // pinMode(PIN_RADIO_RESET, OUTPUT);
+    // pinMode(PIN_RADIO_SS, OUTPUT);
+    // digitalWrite(PIN_RADIO_RESET, HIGH);
+    // digitalWrite(PIN_RADIO_SS, HIGH);
 
-    // enable 3.3v to the SD card
-    pinMode(PIN_3V32_CONTROL, OUTPUT);
-    digitalWrite(PIN_3V32_CONTROL, HIGH);
-    pinMode(PIN_GATE_IR, OUTPUT);
-    digitalWrite(PIN_GATE_IR, HIGH);
+    // // enable 3.3v to the SD card
+    // pinMode(PIN_3V32_CONTROL, OUTPUT);
+    // digitalWrite(PIN_3V32_CONTROL, HIGH);
+    // pinMode(PIN_GATE_IR, OUTPUT);
+    // digitalWrite(PIN_GATE_IR, HIGH);
 
-    delay(2000);
+    // delay(2000);
 
-    xTaskCreate(dumpThread, "Data dump", 2048, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
-    xTaskCreate(radThread, "Telem radio", 2048, NULL, tskIDLE_PRIORITY, &Handle_radTask);
-    
-    // Start the RTOS, this function will never return and will schedule the tasks.
-    vTaskStartScheduler();
+    // xTaskCreate(dumpThread, "Data dump", 2048, NULL, tskIDLE_PRIORITY, &Handle_dumpTask);
+    // #ifdef USE_DEBUG_RADIO
+    // xTaskCreate(radThread, "Telem radio", 2048, NULL, tskIDLE_PRIORITY, &Handle_radTask);
+    // #endif
+    // // Start the RTOS, this function will never return and will schedule the tasks.
+    // vTaskStartScheduler();
 
-    // error scheduler failed to start
-    while(1)
-    {
-      SERIAL.println("Scheduler Failed! \n");
-      delay(1000);
-    }
+    // // error scheduler failed to start
+    // while(1)
+    // {
+    //   SERIAL.println("Scheduler Failed! \n");
+    //   delay(1000);
+    // }
 
   } 
   #if MISSION_ID != MISSION_ROCKSAT
@@ -3106,10 +3112,12 @@ void setup() {
   Wire.begin();
   Wire.setClock(100000); // mcp9600 spec is 1Mhz
 
-  delay(1000);
+  #ifdef DEBUG
+  delay(5000);
+  #endif
 
   #ifdef DEBUG
-  SERIAL.println("Starting...");
+  SERIAL.println("Starting mission ...");
   #endif
 
   // zero out log buffers

@@ -7,9 +7,11 @@
 #define MISSION_SPICA     3
 #define MISSION_CPICA     4
 #define MISSION_REUSE     5
-#define MISSION_ROCKSAT   6
+#define MISSION_FFORM     6
+#define MISSION_ROCKSAT   7
 
-#define MISSION_ID MISSION_ROCKSAT
+
+#define MISSION_ID MISSION_FFORM
 
 #ifndef MISSION_ID 
 #error "Must define MISSION_ID"
@@ -54,6 +56,7 @@
 #define NODE_ADDRESS_KREPE2_004 6 // krepe - cpica
 #define NODE_ADDRESS_KREPE2_005 7 // krepe - reuse
 #define NODE_ADDRESS_KREPE2_006 8 // rocksat
+#define NODE_ADDRESS_KREPE2_007 9 // krepe - fiberform (fform)
 
 // uncomment to enable GPS
 // gps sample period is default 1Hz
@@ -108,26 +111,26 @@
 
   #define PRS1_ADDRESS          0x78  // i2c address
   #define PRS1_MAX              160.0 //kpa
-  #define PRS2_ADDRESS          0x78
-  #define PRS2_MAX              160.0 //kpa
-  #define PRS3_ADDRESS          0x78
-  #define PRS3_MAX              160.0 //kpa
-  #define PRS4_ADDRESS          0x78
-  #define PRS4_MAX              160.0 //kpa
-  #define PRS5_ADDRESS          0x78
-  #define PRS5_MAX              160.0 //kpa
+  #define PRS2_ADDRESS          0x38
+  #define PRS2_MAX              103.4 //kpa
+  #define PRS3_ADDRESS          0x38
+  #define PRS3_MAX              103.4 //kpa
+  #define PRS4_ADDRESS          0x38
+  #define PRS4_MAX              103.4 //kpa
+  #define PRS5_ADDRESS          0x38
+  #define PRS5_MAX              103.4 //kpa
 #endif
 
 // TODO: MCORRECT TYPES MMKAY
-#if MISSION_ID == MISSION_LI220
+#if MISSION_ID == MISSION_LI2200
   #define NODE_ADDRESS NODE_ADDRESS_KREPE2_002
 
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
+  #define TC_1_TYPE MCP9600_TYPE_R
+  #define TC_2_TYPE MCP9600_TYPE_R
+  #define TC_3_TYPE MCP9600_TYPE_R
+  #define TC_4_TYPE MCP9600_TYPE_R
+  #define TC_5_TYPE MCP9600_TYPE_R
+  #define TC_6_TYPE MCP9600_TYPE_R
 
   // TODO: add pressure sensor definitions
 #endif
@@ -136,39 +139,94 @@
 #if MISSION_ID == MISSION_SPICA
   #define NODE_ADDRESS NODE_ADDRESS_KREPE2_003
 
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
+  #define TC_1_TYPE MCP9600_TYPE_R
+  #define TC_2_TYPE MCP9600_TYPE_R
+  #define TC_3_TYPE MCP9600_TYPE_R
+  #define TC_4_TYPE MCP9600_TYPE_R
+  #define TC_5_TYPE MCP9600_TYPE_R
+  #define TC_6_TYPE MCP9600_TYPE_R
 
-  // TODO: add pressure sensor definitions
+  #define PRS1_ADDRESS          0x38  // i2c address
+  #define PRS1_MAX              103.4 //kpa
+  #define PRS2_ADDRESS          0x78
+  #define PRS2_MAX              160.0 //kpa
+  #define PRS3_ADDRESS          0x38
+  #define PRS3_MAX              103.4 //kpa
+  #define PRS4_ADDRESS          0x78
+  #define PRS4_MAX              160.0 //kpa
+  #define PRS5_ADDRESS          0x78
+  #define PRS5_MAX              160.0 //kpa
 #endif
 
-// TODO: MCORRECT TYPES MMKAY
 #if MISSION_ID == MISSION_CPICA
+  #define MCP9601
+
   #define NODE_ADDRESS NODE_ADDRESS_KREPE2_004
 
-  #define TC_1_TYPE MCP9600_TYPE_K
-  #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
-  #define TC_5_TYPE MCP9600_TYPE_K
-  #define TC_6_TYPE MCP9600_TYPE_K
+  #define TC_1_TYPE MCP9600_TYPE_R
+  #define TC_2_TYPE MCP9600_TYPE_R
+  #define TC_3_TYPE MCP9600_TYPE_R
+  #define TC_4_TYPE MCP9600_TYPE_R
+  #define TC_5_TYPE MCP9600_TYPE_R
+  #define TC_6_TYPE MCP9600_TYPE_R
+
+  #define PRS1_ADDRESS          0x78  // i2c address
+  #define PRS1_MAX              160.0 //kpa
+  #define PRS2_ADDRESS          0x38
+  #define PRS2_MAX              103.4 //kpa
+  #define PRS3_ADDRESS          0x38
+  #define PRS3_MAX              103.4 //kpa
+  #define PRS4_ADDRESS          0x38
+  #define PRS4_MAX              103.4 //kpa
+  #define PRS5_ADDRESS          0x38
+  #define PRS5_MAX              103.4 //kpa
 #endif
 
-// TODO: MCORRECT TYPES MMKAY
 #if MISSION_ID == MISSION_REUSE
   #define NODE_ADDRESS NODE_ADDRESS_KREPE2_005
 
+  #define TC_1_TYPE MCP9600_TYPE_R
+  #define TC_2_TYPE MCP9600_TYPE_R
+  #define TC_3_TYPE MCP9600_TYPE_R
+  #define TC_4_TYPE MCP9600_TYPE_R
+  #define TC_5_TYPE MCP9600_TYPE_R
+  #define TC_6_TYPE MCP9600_TYPE_R
+
+  #define PRS1_ADDRESS          0x78  // i2c address
+  #define PRS1_MAX              160.0 //kpa
+  #define PRS2_ADDRESS          0x38
+  #define PRS2_MAX              103.4 //kpa
+  #define PRS3_ADDRESS          0x38
+  #define PRS3_MAX              103.4 //kpa
+  #define PRS4_ADDRESS          0x38
+  #define PRS4_MAX              103.4 //kpa
+  #define PRS5_ADDRESS          0x38
+  #define PRS5_MAX              103.4 //kpa
+#endif
+
+// Fiberform capsule
+#if MISSION_ID == MISSION_FFORM
+  #define NODE_ADDRESS NODE_ADDRESS_KREPE2_007
+
   #define TC_1_TYPE MCP9600_TYPE_K
   #define TC_2_TYPE MCP9600_TYPE_K
   #define TC_3_TYPE MCP9600_TYPE_K
   #define TC_4_TYPE MCP9600_TYPE_K
   #define TC_5_TYPE MCP9600_TYPE_K
   #define TC_6_TYPE MCP9600_TYPE_K
+
+  #define PRS1_ADDRESS          0x78  // i2c address
+  #define PRS1_MAX              160.0 //kpa
+  #define PRS2_ADDRESS          0x38
+  #define PRS2_MAX              103.4 //kpa
+  #define PRS3_ADDRESS          0x38
+  #define PRS3_MAX              103.4 //kpa
+  #define PRS4_ADDRESS          0x38
+  #define PRS4_MAX              103.4 //kpa
+  #define PRS5_ADDRESS          0x38
+  #define PRS5_MAX              103.4 //kpa
 #endif
+
 
 // ROCKSAT
 #if MISSION_ID == MISSION_ROCKSAT
