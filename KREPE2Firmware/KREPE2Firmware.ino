@@ -1987,6 +1987,7 @@ static void imuThread( void *pvParameters )
 
     if( last_sample_time - lastlast_sample_time > (imu_sample_period) ){
       lastlast_sample_time = last_sample_time;
+      if( last_sample_time > FS_CUTOFF_MS ) imu_sample_period = IMU_SAMPLE_PERIOD_MS_SLOW; 
 
       // #ifdef DEBUG
       // if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
@@ -2082,6 +2083,7 @@ static void prsThread( void *pvParameters )
 
     if( xTaskGetTickCount() - lastRead > prs_sample_period ) {  
       lastRead = xTaskGetTickCount(); 
+      if( xTaskGetTickCount() > FS_CUTOFF_MS) prs_sample_period = PRS_SAMPLE_PERIOD_MS_SLOW;
 
       if ( xSemaphoreTake( i2c1Sem, ( TickType_t ) 100 ) == pdTRUE ) {
         select_i2cmux_channel(MUXCHAN_PS1);
@@ -2484,7 +2486,7 @@ static void packetBuildThread( void * pvParameters )
   }
   #endif
 
-  myDelayMs(5000);
+  myDelayMs(20000);
 
   while(1) {
 
@@ -2512,7 +2514,7 @@ static void packetBuildThread( void * pvParameters )
 
     input_size = 0;
     actual_read = 0;
-    packetsToSample = 15; // start with 5, var gets incremented before first use
+    packetsToSample = 25;
     bytesRead = 0;
 
 
@@ -2568,6 +2570,11 @@ static void packetBuildThread( void * pvParameters )
     // sample some spectro data
     if( (temp = sample_datfile(PTYPE_PRS, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
+
+    // myDelayMs(10);
+    // // sample some spectro data
+    // if( (temp = sample_datfile(PTYPE_QUAT, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
+    //   bytesRead += temp;
 
     // overall size in bytes of our data packet, uncompressed
     input_size = bytesRead;
@@ -2638,6 +2645,7 @@ static void tcThread( void *pvParameters )
   while(1) {
     if( xTaskGetTickCount() - lastRead > tc_sample_period ){
       lastRead = xTaskGetTickCount();
+      if( xTaskGetTickCount() > FS_CUTOFF_MS) tc_sample_period = TC_SAMPLE_PERIOD_MS_SLOW;
       //safeKick();
 
     #ifdef DEBUG_TICK
@@ -2974,15 +2982,13 @@ void setup() {
   pinMode(12, INPUT);
   pinMode(11, INPUT);
   pinMode(10, INPUT);
+  pinMode(8, INPUT);
   pinMode(9, INPUT);
-  pinMode(6, INPUT);
+  pinMode(6, OUTPUT);
+  digitalWrite(6, LOW);
   pinMode(5, INPUT);
   pinMode(22, INPUT);
   pinMode(21, INPUT);
-
-  led.begin();
-  led.setPixelColor(0, led.Color(0, 0, 0));
-  led.show();
 
   pinMode(PIN_EXT_INT, INPUT_PULLUP);
   delay(10);
@@ -3054,7 +3060,7 @@ void setup() {
     while ( !woke ) {
         // go to sleep for some period of time
         // about 16 seconds is max before watchdog in testing
-        int sleepMS = Watchdog.sleep();
+        int sleepMS = Watchdog.sleep(1000);
         // now asleep
         woke = digitalRead(PIN_EXT_INT);
     }
@@ -3086,6 +3092,10 @@ void setup() {
   pinPeripheral(A3, PIO_SERCOM_ALT);
   pinPeripheral(13, PIO_SERCOM);
   pinPeripheral(12, PIO_SERCOM);
+
+  led.begin();
+  led.setPixelColor(0, led.Color(0, 0, 0));
+  led.show();
 
 
   // reset pin for RFM69 radio

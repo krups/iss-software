@@ -11,7 +11,7 @@
 #define MISSION_ROCKSAT   7
 
 
-#define MISSION_ID MISSION_FFORM
+#define MISSION_ID MISSION_CPICA
 
 #ifndef MISSION_ID 
 #error "Must define MISSION_ID"
@@ -44,6 +44,7 @@
 
 #define PRS_UNIT_SCALE 100.0f // multiplier for pressure data
 
+#define FS_CUTOFF_MS 15000 // in milliseconds, the time afer which to decrease the sample rate of all sensors
 
 #define FREQUENCY     RF69_915MHZ
 #define ENCRYPTKEY    "sampleEncryptKey"
@@ -63,10 +64,14 @@
 #define USE_GPS
 
 
-#define TC_SAMPLE_PERIOD_MS   1000
+#define TC_SAMPLE_PERIOD_MS   250
 #define SPEC_SAMPLE_PERIOD_MS 250
-#define IMU_SAMPLE_PERIOD_MS  500
-#define PRS_SAMPLE_PERIOD_MS  1000
+#define IMU_SAMPLE_PERIOD_MS  250
+#define PRS_SAMPLE_PERIOD_MS  250
+
+#define TC_SAMPLE_PERIOD_MS_SLOW   1000
+#define IMU_SAMPLE_PERIOD_MS_SLOW  1000
+#define PRS_SAMPLE_PERIOD_MS_SLOW  1000
 
 // TODO: update to BSMS language
 // uncomment to enable spectrometer
@@ -102,10 +107,10 @@
 #if MISSION_ID == MISSION_AMTPS
   #define NODE_ADDRESS NODE_ADDRESS_KREPE2_001
 
-  #define TC_1_TYPE MCP9600_TYPE_K
+  #define TC_1_TYPE MCP9600_TYPE_R
   #define TC_2_TYPE MCP9600_TYPE_K
-  #define TC_3_TYPE MCP9600_TYPE_K
-  #define TC_4_TYPE MCP9600_TYPE_K
+  #define TC_3_TYPE MCP9600_TYPE_R
+  #define TC_4_TYPE MCP9600_TYPE_R
   #define TC_5_TYPE MCP9600_TYPE_K
   #define TC_6_TYPE MCP9600_TYPE_K
 
