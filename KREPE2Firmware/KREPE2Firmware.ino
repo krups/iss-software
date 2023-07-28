@@ -2514,7 +2514,11 @@ static void packetBuildThread( void * pvParameters )
 
     input_size = 0;
     actual_read = 0;
+    #if MISSION_ID == MISSION_REUSE
+    packetsToSample = 33;
+    #else
     packetsToSample = 25;
+    #endif
     bytesRead = 0;
 
 
@@ -2561,10 +2565,12 @@ static void packetBuildThread( void * pvParameters )
     if( (temp = sample_datfile(PTYPE_ACC,  packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
 
+    #if MISSION_ID != MISSION_REUSE
     myDelayMs(10);
     // sample some spectro data
     if( (temp = sample_datfile(PTYPE_SPEC, packetsToSample, &uc_buf[input_size + bytesRead])) != ERR_SD_BUSY )
       bytesRead += temp;
+    #endif
 
     myDelayMs(10);
     // sample some spectro data

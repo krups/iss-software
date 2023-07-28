@@ -11,14 +11,14 @@
 #define MISSION_ROCKSAT   7
 
 
-#define MISSION_ID MISSION_CPICA
+#define MISSION_ID MISSION_ROCKSAT
 
 #ifndef MISSION_ID 
 #error "Must define MISSION_ID"
 #endif
 
-#define USE_DEBUG_RADIO 1
-#define DEBUG 1 // usb serial debug switch
+//#define USE_DEBUG_RADIO 1
+//#define DEBUG 1 // usb serial debug switch
 #ifdef DEBUG
   //#define DEBUG_GPS 1 // print raw gga to serial
   //#define DEBUG_QUEUE 1 // print info on log queue operations
