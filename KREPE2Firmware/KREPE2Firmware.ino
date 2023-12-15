@@ -2808,7 +2808,7 @@ if ( xSemaphoreTake( dbSem, ( TickType_t ) 100 ) == pdTRUE ) {
   // CREATE UNIQUE FILE NAMES (UP TO 1000)
   for( int i=0; i < 1000; i++) {
     filename[2] = '0' + (int)(i/100);
-    filename[3] = '0' + (i-((int)(i/100)))/10;
+    filename[3] = '0' + (((int)(i/10)))%10;
     filename[4] = '0' + i%10;
 
     // create if does not exist, do not open existing, write, sync after write
@@ -3001,6 +3001,7 @@ void setup() {
   attachInterrupt(PIN_EXT_INT, sleepISR, RISING);
 
   bool woke = digitalRead(PIN_EXT_INT);
+  bool realWoke = false;
 
   if( woke ){
 
@@ -3063,12 +3064,25 @@ void setup() {
     PM->SLEEPCFG.bit.SLEEPMODE = 0x4;             // Set up SAMD51 to enter low power STANDBY mode
     while(PM->SLEEPCFG.bit.SLEEPMODE != 0x4);
     
+    int wokeCount;
+    
     while ( !woke ) {
-        // go to sleep for some period of time
-        // about 16 seconds is max before watchdog in testing
-        int sleepMS = Watchdog.sleep(1000);
-        // now asleep
-        woke = digitalRead(PIN_EXT_INT);
+      while ( !woke ) {
+          // go to sleep for some period of time
+          // about 16 seconds is max before watchdog in testing
+          int sleepMS = Watchdog.sleep(1000); // in milliseconds
+          // now asleep
+          woke = digitalRead(PIN_EXT_INT);
+
+      }
+      // if we wake from vibration moving the activation springs and breaking contact, re-read the interrupt 
+      // pin every 50 ms  for another 250 ms to make sure we are actually free of the KREM
+      // and re-read the interrupt pin
+      for( wokeCount = 0; wokeCount < 5; wokeCount++){
+        delay(50);
+        woke &= digitalRead(PIN_EXT_INT);
+        if (!woke) break;
+      }
     }
   }
   #endif

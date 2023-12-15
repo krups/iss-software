@@ -11,7 +11,7 @@
 #define MISSION_ROCKSAT   7
 
 
-#define MISSION_ID MISSION_ROCKSAT
+#define MISSION_ID MISSION_FFORM
 
 #ifndef MISSION_ID 
 #error "Must define MISSION_ID"
