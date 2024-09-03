@@ -16,6 +16,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pdb
 import seaborn as sns
+import scipy as sp
 
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
@@ -66,7 +67,7 @@ for i in range(0, numInputs):
     csvfile = sys.argv[i+1]+'.csv'
     cmdStr = os.getcwd()+'/parser/log_parser packet ' + outfile + " | sed '1,5 d' > " + csvfile
     cmdOut = os.system(cmdStr)
-    
+    print(cmdOut)
     #print(" -> converting to CSV and reading in\n   output: {}".format(cmdOut))
     
     with open(csvfile) as f:
@@ -127,81 +128,92 @@ print("Opening figures")
 ####################
 #     IMU Plot
 ####################
-imuData = np.sort(np.array(imuData),0)
-IMU_acc_x = imuData[:,1]
-IMU_acc_y = imuData[:,2]
-IMU_acc_z = imuData[:,3]
-IMU_gyr_x = imuData[:,4]
-IMU_gyr_y = imuData[:,5]
-IMU_gyr_z = imuData[:,6]
-IMU_time = imuData[:,0]
+if len(imuData) > 0:
+   imuData = np.array(imuData)
+   imuData[imuData[:,0].argsort()]
+   #imuData = np.sort(np.array(imuData),0)
+   #a[a[:, 1].argsort()]
+   IMU_acc_x = imuData[:,1]
+   IMU_acc_y = imuData[:,2]
+   IMU_acc_z = imuData[:,3]
+   IMU_gyr_x = imuData[:,4]
+   IMU_gyr_y = imuData[:,5]
+   IMU_gyr_z = imuData[:,6]
+   IMU_time = imuData[:,0]
 
-IMU_axs = []
-IMU_fig, IMU_axs = plt.subplots(2, 3, sharex=True)
+   IMU_axs = []
+   IMU_fig, IMU_axs = plt.subplots(2, 3, sharex=True)
 
-IMU_axs[0, 0].plot(IMU_time, IMU_acc_x)
-IMU_axs[0, 0].set_title("Acc x")
-IMU_axs[0, 0].set_ylabel("m/s/s")
+   IMU_axs[0, 0].scatter(IMU_time, IMU_acc_x)
+   IMU_axs[0, 0].set_title("Acc x")
+   IMU_axs[0, 0].set_ylabel("m/s/s")
 
-IMU_axs[0, 1].plot(IMU_time, IMU_acc_y, color="blue")
-IMU_axs[0, 1].sharey(IMU_axs[0, 0])
-IMU_axs[0, 1].set_title("Acc y")
-IMU_axs[0, 1].set_ylabel("m/s/s")
+   IMU_axs[0, 1].scatter(IMU_time, IMU_acc_y, color="blue")
+   IMU_axs[0, 1].sharey(IMU_axs[0, 0])
+   IMU_axs[0, 1].set_title("Acc y")
+   IMU_axs[0, 1].set_ylabel("m/s/s")
 
-IMU_axs[0, 2].plot(IMU_time, IMU_acc_z, color="green")
-IMU_axs[0, 2].sharey(IMU_axs[0, 0])
-IMU_axs[0, 2].set_title("Acc z")
-IMU_axs[0, 2].set_ylabel("m/s/s")
+   IMU_axs[0, 2].scatter(IMU_time, IMU_acc_z, color="green")
+   IMU_axs[0, 2].sharey(IMU_axs[0, 0])
+   IMU_axs[0, 2].set_title("Acc z")
+   IMU_axs[0, 2].set_ylabel("m/s/s")
 
-IMU_axs[1, 0].plot(IMU_time, IMU_gyr_x, color="purple")
-IMU_axs[1, 0].set_title("Gyro x")
-IMU_axs[1, 0].set_ylabel("deg/sec")
+   IMU_axs[1, 0].scatter(IMU_time, IMU_gyr_x, color="purple")
+   IMU_axs[1, 0].set_title("Gyro x")
+   IMU_axs[1, 0].set_ylabel("deg/sec")
 
-IMU_axs[1, 1].plot(IMU_time, IMU_gyr_y, color="#8B8000")
-IMU_axs[1, 1].sharey(IMU_axs[1, 0])
-IMU_axs[1, 1].set_title("Gyro y")
-IMU_axs[1, 1].set_ylabel("deg/sec")
+   IMU_axs[1, 1].scatter(IMU_time, IMU_gyr_y, color="#8B8000")
+   IMU_axs[1, 1].sharey(IMU_axs[1, 0])
+   IMU_axs[1, 1].set_title("Gyro y")
+   IMU_axs[1, 1].set_ylabel("deg/sec")
 
-IMU_axs[1, 2].plot(IMU_time, IMU_gyr_z, color="#ADD8E6")
-IMU_axs[1, 2].sharey(IMU_axs[1, 0])
-IMU_axs[1, 2].set_title("Gyro z")
-IMU_axs[1, 2].set_ylabel("deg/sec")
+   IMU_axs[1, 2].scatter(IMU_time, IMU_gyr_z, color="#ADD8E6")
+   IMU_axs[1, 2].sharey(IMU_axs[1, 0])
+   IMU_axs[1, 2].set_title("Gyro z")
+   IMU_axs[1, 2].set_ylabel("deg/sec")
 
-IMU_axs[1, 0].set_xlabel("Time (s)")
-IMU_axs[1, 1].set_xlabel("Time (s)")
-IMU_axs[1, 2].set_xlabel("Time (s)")
+   IMU_axs[1, 0].set_xlabel("Time (s)")
+   IMU_axs[1, 1].set_xlabel("Time (s)")
+   IMU_axs[1, 2].set_xlabel("Time (s)")
 
-IMU_fig.suptitle("IMU Plots")
-IMU_fig.tight_layout()
+   IMU_fig.suptitle("IMU Plots")
+   IMU_fig.tight_layout()
 
-print("here 1")
-
+   print("here 1")
+   #pdb.set_trace()
 
 ####################
 #      TC Plot
 ####################
-tcData = np.sort(np.array(tcData), 0)
-TC_1 = tcData[:,1]
-TC_2 = tcData[:,2]
-TC_3 = tcData[:,3]
-TC_4 = tcData[:,4]
-TC_5 = tcData[:,5]
-TC_6 = tcData[:,6]
-TC_time = tcData[:,0]
+if len(tcData) > 0:
+   tcData = np.array(tcData)
+   tcData = tcData[tcData[:,0].argsort()]
+   TC_1 = tcData[:,1]
+   TC_2 = tcData[:,2]
+   TC_3 = tcData[:,3]
+   TC_4 = tcData[:,4]
+   TC_5 = tcData[:,5]
+   TC_6 = tcData[:,6]
+   TC_time = tcData[:,0]
 
-TC_fig, TC_axs = plt.subplots()
-TC_axs.plot(TC_time, TC_1, label="TC 1", marker="o")
-TC_axs.plot(TC_time, TC_2, label="TC 2", marker="^")
-TC_axs.plot(TC_time, TC_3, label="TC 3", marker="v")
-TC_axs.plot(TC_time, TC_4, label="TC 4", marker="<")
-TC_axs.plot(TC_time, TC_5, label="TC 5", marker=">")
-TC_axs.plot(TC_time, TC_6, label="TC 6", marker="x")
-TC_axs.legend()
-TC_axs.set_xlabel("Time (s)")
-TC_axs.set_ylabel("Temperature (deg. C)")
-TC_fig.suptitle("TC Plots")
+   kernel_size = 15
 
-print("here2")
+   TC_fig, TC_axs = plt.subplots()
+   TC_axs.plot(TC_time, sp.signal.medfilt(TC_1, kernel_size), label="TC 1")
+   TC_axs.plot(TC_time, sp.signal.medfilt(TC_2, kernel_size), label="TC 2")
+   TC_axs.plot(TC_time, sp.signal.medfilt(TC_3, kernel_size), label="TC 3")
+   TC_axs.plot(TC_time, sp.signal.medfilt(TC_4, kernel_size), label="TC 4")
+   TC_axs.plot(TC_time, sp.signal.medfilt(TC_5, kernel_size), label="TC 5")
+   TC_axs.plot(TC_time, sp.signal.medfilt(TC_6, kernel_size), label="TC 6")
+   TC_axs.get_yaxis().set_visible(False)
+   TC_axs.legend()
+   TC_axs.set_xlabel("Time (seconds)")
+   TC_axs.set_ylabel("Temperature")
+   TC_fig.suptitle("TC Plots")
+
+   print("here2")
+
+
 
 # ####################
 # #     GGA Plot
@@ -268,38 +280,47 @@ print("here2")
 ####################
 #     ACC Plot
 ####################
-highGData = np.sort(np.array(highGData), 0)
-ACC_x = highGData[:,1]
-ACC_y =  highGData[:,2]
-ACC_z =  highGData[:,3]
-ACC_time =  highGData[:,0]
+if len(highGData) > 0:
+   highGData = np.array(highGData)
+   highGData = highGData[highGData[:,0].argsort()]
+   
+   ACC_x = highGData[:,1]
+   ACC_y =  highGData[:,2]
+   ACC_z =  highGData[:,3]
+   ACC_time =  highGData[:,0]
 
-ACC_axs = []
-ACC_fig, ACC_axs = plt.subplots(3, sharex=True, sharey=True)
+   ACC_axs = []
+   ACC_fig, ACC_axs = plt.subplots(3, sharex=True, sharey=True)
 
-ACC_axs[0].plot(ACC_time, ACC_x)
-ACC_axs[0].set_ylabel("X axis (g)")
+   ACC_axs[0].plot(ACC_time, ACC_x)
+   ACC_axs[0].set_ylabel("X axis (g)")
 
-ACC_axs[1].plot(ACC_time, ACC_y, color="blue")
-ACC_axs[1].set_ylabel("Y axis (g)")
+   ACC_axs[1].plot(ACC_time, ACC_y, color="blue")
+   ACC_axs[1].set_ylabel("Y axis (g)")
 
-ACC_axs[2].plot(ACC_time, ACC_z, color="green")
-ACC_axs[2].set_ylabel("Z axis (g)")
-ACC_axs[2].set_xlabel("Time (s)")
+   ACC_axs[2].plot(ACC_time, ACC_z, color="green")
+   ACC_axs[2].set_ylabel("Z axis (g)")
+   ACC_axs[2].set_xlabel("Time (s)")
 
-ACC_fig.suptitle("High G importAccelerometer Plots")
+   ACC_fig.suptitle("High G importAccelerometer Plots")
 
 ####################
 #    SPEC Plot
 ####################
-if len(specData):
-  specData = np.sort(np.array(specData),0)
+if len(specData) > 0:
+  specData = np.array(specData)
+  specData = specData[specData[:,0].argsort()]
   SPEC_time = np.round(specData[:,0], decimals=2)
   SPEC_vals = specData[:,2:]
   binLabels = ["340-496nm", "497-568nm", "569-640nm", "641-712nm", "713-784nm", "785-856nm" ]
   plt.figure()
-  SPEC_axs = sns.heatmap(SPEC_vals, linewidth=0.5, yticklabels=SPEC_time, xticklabels=binLabels)
-  plt.title("Spectrometer");
+  SPEC_axs = sns.heatmap(SPEC_vals.T, linewidth=0.0, yticklabels=binLabels, xticklabels=SPEC_time)
+  for ind, label in enumerate(SPEC_axs.get_xticklabels()):
+    if ind % 20 == 0:  # every 10th label is kept
+      label.set_visible(True)
+    else:
+      label.set_visible(False)
+  plt.title("Spectrometer")
   plt.show(block=False)
 
 
@@ -318,14 +339,20 @@ if len(specData):
 ####################
 #    Pressure Plot
 ####################
-pressureData = np.sort(np.array(pressureData), 0)
-
-plt.figure()
-plt.plot(pressureData[:,0], pressureData[:,1:], linestyle='--', marker='o')
-plt.legend(['Prs 1','Prs 2','Prs 3','Prs 4','Prs 5'])
-plt.xlabel('Time (seconds)')
-plt.ylabel('Pressure (kPa)')
-plt.show(block=False)
+if len(pressureData) > 0:
+   pressureData = np.array(pressureData)
+   pressureData = pressureData[pressureData[:,0].argsort()]
+   plt.figure()
+   kernel_size = 5
+   plt.plot(pressureData[:,0], sp.signal.medfilt(pressureData[:,1],kernel_size), linestyle='--')
+   plt.plot(pressureData[:,0], sp.signal.medfilt(pressureData[:,2],kernel_size), linestyle='--')
+   plt.plot(pressureData[:,0], sp.signal.medfilt(pressureData[:,3],kernel_size), linestyle='--')
+   plt.plot(pressureData[:,0], sp.signal.medfilt(pressureData[:,4],kernel_size), linestyle='--')
+   plt.plot(pressureData[:,0], sp.signal.medfilt(pressureData[:,5],kernel_size), linestyle='--')
+   plt.legend(['Prs 1','Prs 2','Prs 3','Prs 4','Prs 5'])
+   plt.xlabel('Time (seconds)')
+   plt.ylabel('Pressure (kPa)')
+   plt.show(block=False)
 
 endd = input()
 

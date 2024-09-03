@@ -305,7 +305,13 @@ void printSpec(spec_t data, std::ostream &stream) {
         << ", " << (int)(data.data[2])
         << ", " << (int)(data.data[3])
         << ", " << (int)(data.data[4])
-        << ", " << (int)(data.data[5]) << std::endl;
+        << ", " << (int)(data.data[5]) 
+        << ", " << (int)(data.peaks[0])
+        << ", " << (int)(data.peaks[1])
+        << ", " << (int)(data.peaks[2])
+        << ", " << (int)(data.peaks[3])
+        << ", " << (int)(data.peaks[4])
+        << ", " << (int)(data.peaks[5]) << std::endl;
 }
 
 void printPrs(prs_t data, std::ostream &stream) {
