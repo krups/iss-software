@@ -17,3 +17,9 @@ Groundstation Image processing is in the ```GoundstationImage``` folder.
 
 ### Data Analysis
 Tools to decompress received iridium packets and convert them from binary format to CSV format are in the ```tools/``` directory.
+
+### Hardware
+
+The hardware that this code runs on is in seperate repositories. See Below.
+
+[FemptoSats hardware](https://github.com/krups/KRUPS-FemtoSat)
