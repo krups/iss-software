@@ -11,6 +11,8 @@ Ground station firmware (Feather M0) processor is in ```GroundstationFirmware```
 
 Spectrometer subsystem (FeatherM0/M4) firmware is in ```BSMSFirmware``` folder.
 
+FemptoSats  (ESP32-S3-WROOM) is in  ```FemptoSatsFirmware``` folder.
+
 Shared code and parameters between these three firmwares is in ```src/``` directory.
 
 Groundstation Image processing is in the ```GoundstationImage``` folder.
