@@ -5,13 +5,17 @@ Software supporting the [RockSat-X Ghost flight computer, Femptosats, and Ground
 This codebase is built on the [KREPE Flight Computer (KFC)](https://github.com/krups/iss-software). The major change to the Flight Computer is changing the MCU and upgrading the LoRa module.
 
 ### Firmware 
-Main flight computer (Feather M4 processor) firmware is in ```KREPE2Firmware``` folder.
-
-Ground station firmware (Feather M0) processor is in ```GroundstationFirmware``` folder.
+Main flight computer (ESP32-S3-WROOM) firmware is in ``GhostFirmware``` folder.
 
 Spectrometer subsystem (FeatherM0/M4) firmware is in ```BSMSFirmware``` folder.
 
-FemptoSats  (ESP32-S3-WROOM) is in  ```FemptoSatsFirmware``` folder.
+FemptoSats (ESP32-S3-WROOM) is in  ```FemptoSatsFirmware``` folder.
+
+Rocket Station Transmitter (ESP32-S3-WROOM) firmware is in  ```RSTFirmware``` folder.
+
+Rocket Station (Raspberry Pi 5) firmware is in  ```RocketStationFirmware``` folder.
+
+Ground Station firmware (DEFINE) processor is in ```GroundGtationFirmware``` folder.
 
 Shared code and parameters between these three firmwares is in ```src/``` directory.
 
