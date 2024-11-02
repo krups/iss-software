@@ -5,7 +5,7 @@ Software supporting the [RockSat-X Ghost flight computer, Femptosats, and Ground
 This codebase is built on the [KREPE Flight Computer (KFC)](https://github.com/krups/iss-software). The major change to the Flight Computer is changing the MCU and upgrading the LoRa module.
 
 ### Firmware 
-Main flight computer (ESP32-S3-WROOM) firmware is in ``GhostFirmware``` folder.
+Main flight computer (ESP32-S3-WROOM) firmware is in ```GhostFirmware``` folder.
 
 Spectrometer subsystem (FeatherM0/M4) firmware is in ```BSMSFirmware``` folder.
 
