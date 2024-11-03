@@ -4,9 +4,3 @@
 [submodule "tools/CS-499-Senior-Design"]
 	path = tools/CS-499-Senior-Design
 	url = git@github.com:krups/CS-499-Senior-Design.git
-[submodule "src/Honeywell_ABP"]
-	path = src/Honeywell_ABP
-	url = https://github.com/ij96/Honeywell_ABP
-[submodule "src/SparkFun_IridiumSBD_I2C_Arduino_Library"]
-	path = src/SparkFun_IridiumSBD_I2C_Arduino_Library
-	url = https://github.com/sparkfun/SparkFun_IridiumSBD_I2C_Arduino_Library.git
