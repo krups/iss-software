@@ -16,7 +16,7 @@
 #include <Adafruit_SleepyDog.h>
 #include <ArduinoNmeaParser.h>
 #include <SerialCommands.h>
-#include <FreeRTOS_SAMD51.h>
+//#include <FreeRTOS_SAMD51.h>
 #include <Honeywell_ABP.h>
 #include <ArduinoJson.h>
 #include <IridiumSBD.h>
@@ -24,7 +24,7 @@
 #include <SD.h>
 #include <SPI.h>
 //#include <RFM69.h>
-#include <Servo.h>
+//#include <Servo.h>
 #include "wiring_private.h"
 
 #include "src/H3LIS100.h"      // high g accel driver
