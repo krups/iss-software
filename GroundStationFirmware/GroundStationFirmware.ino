@@ -681,25 +681,25 @@ void cmd_wireless_dump(SerialCommands* sender)
 void cmd_help(SerialCommands* sender, const char* cmd)
 {
   #ifdef DEBUG
-  if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
-    sender->GetSerial()->print("Unrecognized command [");
-    sender->GetSerial()->print(cmd);
-    sender->GetSerial()->println("]");
+  // if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
+  //   sender->GetSerial()->print("Unrecognized command [");
+  //   sender->GetSerial()->print(cmd);
+  //   sender->GetSerial()->println("]");
 
-    // TODO: print list of available commands..
+  //   // TODO: print list of available commands..
 
-    SerialCommand *head = sender->commands_head_;
-    SerialCommand *next = head->next;
-    if( head != NULL ){
-      while(next->next != sender->commands_tail_){
-        next = next->next;
-        sender->GetSerial()->print("  ");
-        sender->GetSerial()->println(next->command);
-      }
-    }
+  //   SerialCommand *head = sender->commands_head_;
+  //   SerialCommand *next = head->next;
+  //   if( head != NULL ){
+  //     while(next->next != sender->commands_tail_){
+  //       next = next->next;
+  //       sender->GetSerial()->print("  ");
+  //       sender->GetSerial()->println(next->command);
+  //     }
+  //   }
 
-    xSemaphoreGive( dbSem );
-  }
+  //   xSemaphoreGive( dbSem );
+  // }
   #endif
 }
 
