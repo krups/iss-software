@@ -1,8 +1,13 @@
 /*
- * KREPE-2 Firmware
+ * KFC Firmware
  *
+ * Originally by
  * Matt Ruffner, University of Kentucky Fall 2022
+ * Updated by
+ * Hersch Nathan, Alex Barrera, and Nadia Turner, University of Kentucky Fall 2024
  */
+
+#define USE_ESP32S3 1 
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -16,7 +21,7 @@
 #include <Adafruit_SleepyDog.h>
 #include <ArduinoNmeaParser.h>
 #include <SerialCommands.h>
-//#include <FreeRTOS_SAMD51.h>
+#include <FreeRTOS.h>
 #include <Honeywell_ABP.h>
 #include <ArduinoJson.h>
 #include <IridiumSBD.h>
@@ -27,12 +32,13 @@
 //#include <Servo.h>
 #include "wiring_private.h"
 
-#include "src/H3LIS100.h"      // high g accel driver
+
+// #include "src/H3LIS100.h"      // high g accel driver
 #include "src/delay_helpers.h" // rtos delay helpers
 #include "src/config.h"        // project wide defs
 #include "src/packet.h"        // packet definitions
 #include "src/commands.h"      // command definitions
-#include "pins.h"              // flight computer pinouts
+// #include "pins.h"              // flight computer pinouts
 #include "src/serial_headers.h"// Headers for serial print
 #include "src/brieflz.h"
 #include "src/utils.h"         // 
