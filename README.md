@@ -1,3 +1,5 @@
+## DEV BRANCH
+This Branch is for testing ESP-IDF and try to get away from Arduino IDE
 ## RockSat-X Software
 
 Software supporting the [RockSat-X Ghost flight computer, Femptosats, and Ground Station]([https://github.com/krups/RockSatX-Ghost-software]) RockSat-X Flight (Ghost) November 2025.
