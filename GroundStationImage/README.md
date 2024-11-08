@@ -1,1 +1,0 @@
-## GHOST GroundStation Image Processing

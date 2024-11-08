@@ -47,9 +47,11 @@
 
 // Serial 2
 Serial Serial2( &sercom3, 13, 12, SERCOM_RX_PAD_1, UART_TX_PAD_0 ) ;
-// void SERCOM3_0_Handler()
-// {
-//   Serial2.IrqHandler();
+Serial2.uart_enable_intr_mask();
+
+void SERCOM3_0_Handler()
+ {
+  Serial2.uart_enable_intr_mask();
 // }
 // void SERCOM3_1_Handler()
 // {
