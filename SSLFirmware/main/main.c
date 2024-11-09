@@ -4,8 +4,9 @@
 //Based on Matt Ruffner's KREPE 2 firmware
 //Developed by Hersch Nathan, Alex Barrera
 
-#include <config.h>
-#include "freertos/task.h"
+
+#include <config.h> 
+#include "freertos/task.h" //backbone of this firmware
 
 void app_main(void)
 {

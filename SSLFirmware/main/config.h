@@ -25,13 +25,10 @@
 //
 //   for each group define pins and define which sensors are available
 
-
-
-
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define Fempto_KANGS 1
+#define Fempto_KANGS 
 
 
 // Constant I2C Addresses
@@ -44,11 +41,11 @@
 
 #elif defined(Fempto_KANGS)
 
-    #define I2C1 1
-    #define SPI1 1
+    #define I2C1 
+    #define SPI1 
    
-    #define LORA 1 
-    #define SENSORS 1
+    #define LORA 
+    #define SENSORS 
 
     // USB Pins
     #define USB1_DP 14
