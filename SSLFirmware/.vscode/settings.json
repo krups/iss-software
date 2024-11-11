@@ -12,5 +12,9 @@
     ],
     "idf.port": "/dev/tty.WI-XB400",
     "idf.pythonBinPath": "/Users/user/.espressif/python_env/idf5.4_py3.9_env/bin/python",
-    "idf.toolsPath": "/Users/user/.espressif"
+    "idf.toolsPath": "/Users/user/.espressif",
+    "files.associations": {
+        "i2c_wrapper.h": "c",
+        "i2c_master.h": "c"
+    }
 }
