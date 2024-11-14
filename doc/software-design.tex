@@ -24,18 +24,38 @@
 \maketitle
 
 \section{General Requirements}
-\par This software is to support the KRUPS missions. The current mission is KRUPS Aboard Norwegian GhostSat (KANGS).
+\par This software is to support the KRUPS missions. The current mission is KRUPS Aboard Norwegian GhostSat (KANGS). The hardware paradim is based around an ESP32-S3. 
+\par This work is porting Matt Ruffner's firmware for Adafruit Feather M0/M4 to the ESP32-S3. This including switching from the Arduino IDE to ESP-IDF.
+\par The goal of this project is to make the firmware more modular and configurable for each mission and hardware.
+
+\section{Background Information}
+
+//TODO: Add information about the freeRTOS
 
 \section{Architecture Design}
-\par The firmware's framework is designed to be modular and configerable for each mission and each hardware. 
+\par The firmware's framework is designed to be modular and configerable thmission and each hardware. The backbone of the firmware is using freeRTOS tasks to handle the different modules. Each taks is its own module that encapsulates the relevant hardware. The tasks communicate with each other using a message queue. The message queue is used to send data between tasks. The message queue is also used to send commands to the tasks.
 
 \begin{figure} [H]
     \centering
-    \caption{Firmware Architecture}
     \includegraphics[width=0.8\textwidth]{images/firmware-architecture.png}
+    \caption{Firmware Architecture}
     \label{fig:firmware-architecture} 
 \end{figure}
 
+\par In the figure \ref{fig:firmware-architecture}, the main tasks there are four types of tasks. 
+
+\subsection{Sensor Tasks}
+\par Each sensor task manages one sensor or group of sensors, see \ref{fig:sensor-architecture}. At startup it configures the sensors with the necessary parameters, then it calls a looping task. That task, takes the semaphore for the used serial communication interface (I2C, SPI, UART, etc). It sends the command to the sensor to get the data, reads the response, and then releases the semaphore. The task then sends the data to the packet build tasks queues.
+
+\begin{figure} [H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/sensor-architechure.png}
+    \caption{Sensor Task Architecture}
+    \label{fig:sensor-architecture} 
+\end{figure} 
+\subsection{Packet Build Tasks}
+\subsection{Wireless Communication Tasks}
+\subsection{Deployment Tasks}
 \section{Kentucky Flight Computer (KFC) Requirements}
 
 \section{FemptoSats Requirements}
