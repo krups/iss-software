@@ -13,7 +13,7 @@
 #include <esp_log.h>
 
 //defines, constants
-#define CONFIG_I2CDEV_TIMEOUT 
+#define CONFIG_I2CDEV_TIMEOUT 1000
 
 //I2C device descriptor
 typedef struct
@@ -27,7 +27,6 @@ typedef struct
 
 
 // I2C transaction type
-
 typedef enum {
     I2C_DEV_WRITE = 0, // Write operation, default
     I2C_DEV_READ       // Read operation
@@ -43,7 +42,6 @@ typedef struct {
 // I2C device configuration
 
 esp_err_t i2c_dev_init();
-
 
 esp_err_t i2c_dev_done();
 
