@@ -1,7 +1,7 @@
-\documentclass{article}
+\documentclass{book}
 \usepackage[utf8]{inputenc}
 
-\title{Space Systems Lab Firmware and Safety Verification}
+\title{Space Systems Lab Firmware and Mission Requirements Document}
 \author{Hersch Nathan}
 \date{November 2024}
 
@@ -27,13 +27,21 @@
 \par This software is to support the KRUPS missions. The current mission is KRUPS Aboard Norwegian GhostSat (KANGS). The hardware paradim is based around an ESP32-S3. 
 \par This work is porting Matt Ruffner's firmware for Adafruit Feather M0/M4 to the ESP32-S3. This including switching from the Arduino IDE to ESP-IDF.
 \par The goal of this project is to make the firmware more modular and configurable for each mission and hardware.
+\par The first chapter of this document outlines the over all architechure design and background information for this project. The second chapter rt details each libraries, drives, wrappers, and other software components that we wrote for this project. It provides design decisions and the reasoning behind them aswell as how to interface with them. The third and on details the software requirements for each hardware component for each mission.
 
+\tableofcontents
+
+\chapter{Architechure Design} 
 \section{Background Information}
 
-//TODO: Add information about the freeRTOS
+\subsection{freeRTOS}
+\par freeRTOS is a real time operating system. A real time operating system works by having tasks that run at different priorities. The tasks are scheduled by the operating system and those tasks occur through a determanistic prosess. The tasks can communicate with each other using message queues. The tasks can also synchronize with each other using semaphores.
 
-\section{Architecture Design}
-\par The firmware's framework is designed to be modular and configerable thmission and each hardware. The backbone of the firmware is using freeRTOS tasks to handle the different modules. Each taks is its own module that encapsulates the relevant hardware. The tasks communicate with each other using a message queue. The message queue is used to send data between tasks. The message queue is also used to send commands to the tasks.
+\subsection{ESP-IDF}
+\par ESP-IDF is the Espressif IoT Development Framework. It is the official development framework for the ESP32 and ESP32-S3. It is a set of libraries and tools that are used to develop software for the ESP32 and ESP32-S3.
+
+\section{Overall Architecture Design}
+\par The firmware's framework is designed to be modular and configerable thmission and each hardware. The backbone of the firmware is using freeRTOS tasks to handle the different modules. Each taks is its own module that encapsulates the relevant hardware. The tasks communicate with each other using a publisher/subscriber model.
 
 \begin{figure} [H]
     \centering
@@ -43,8 +51,8 @@
 \end{figure}
 
 \par In the figure \ref{fig:firmware-architecture}, the main tasks there are four types of tasks. 
-
-\subsection{Sensor Tasks}
+\subsection{Task}
+\subsubsection{Sensor Tasks}
 \par Each sensor task manages one sensor or group of sensors, see \ref{fig:sensor-architecture}. At startup it configures the sensors with the necessary parameters, then it calls a looping task. That task, takes the semaphore for the used serial communication interface (I2C, SPI, UART, etc). It sends the command to the sensor to get the data, reads the response, and then releases the semaphore. The task then sends the data to the packet build tasks queues.
 
 \begin{figure} [H]
@@ -54,9 +62,18 @@
     \label{fig:sensor-architecture} 
 \end{figure} 
 
-\subsection{Packet Build Tasks}
-\subsection{Wireless Communication Tasks}
-\subsection{Deployment Tasks}
+\subsubsection{Packet Build Tasks}
+\subsubsection{Wireless Communication Tasks}
+\subsubsection{Deployment Tasks}
+
+\subsection{Middleware}
+\chapter{Software Components}
+
+\section{Wrappers}
+
+\subsection{I2C Wrapper}
+
+\chapter{KRUPS Aboard Norwegian GhostSat (KANG)}
 \section{Kentucky Flight Computer (KFC) Requirements}
 
 \section{FemptoSats Requirements}
@@ -84,19 +101,15 @@
 \par The Wifi will fail over to the LoRa when the Wifi gets out of range
 
 \section{Rocketstation Transmitter (RST) Requirements}
+\par uart to raspi to shut off need
 
 \section{Rocketstation Requirements}
-
+\par uart to raspi to shut off need
 \section{Groundstation Requirements}
 
 
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  APPENDIX
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %\appendix
 
 %\newpage
