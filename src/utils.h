@@ -1,7 +1,7 @@
 #ifndef UTILS_H
 
 #include "packet.h"
-#include <avr/dtostrf.h>
+//#include <avr/dtostrf.h>
 
 
 // helper to format binary data as CSV strings for printing

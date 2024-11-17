@@ -1,8 +1,14 @@
 /*
- * KREPE-2 Firmware
+ * KFC Firmware
  *
+ * Originally by
  * Matt Ruffner, University of Kentucky Fall 2022
+ * Updated by
+ * Hersch Nathan, Alex Barrera, and Nadia Turner, University of Kentucky Fall 2024
  */
+
+#define USE_ESP32S3 1 
+#define MISSION_ID "MISSION_ROCKSAT" //get rid of this later
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -16,16 +22,17 @@
 #include <Adafruit_SleepyDog.h>
 #include <ArduinoNmeaParser.h>
 #include <SerialCommands.h>
-#include <FreeRTOS_SAMD51.h>
+#include <FreeRTOS.h>
 #include <Honeywell_ABP.h>
 #include <ArduinoJson.h>
 #include <IridiumSBD.h>
 #include <semphr.h>
 #include <SD.h>
 #include <SPI.h>
-#include <RFM69.h>
-#include <Servo.h>
+//#include <RFM69.h>
+//#include <Servo.h>
 #include "wiring_private.h"
+
 
 #include "src/H3LIS100.h"      // high g accel driver
 #include "src/delay_helpers.h" // rtos delay helpers
@@ -39,61 +46,63 @@
 
 
 // Serial 2
-Uart Serial2( &sercom3, 13, 12, SERCOM_RX_PAD_1, UART_TX_PAD_0 ) ;
+Serial Serial2( &sercom3, 13, 12, SERCOM_RX_PAD_1, UART_TX_PAD_0 ) ;
+Serial2.uart_enable_intr_mask();
+
 void SERCOM3_0_Handler()
-{
-  Serial2.IrqHandler();
-}
-void SERCOM3_1_Handler()
-{
-  Serial2.IrqHandler();
-}
-void SERCOM3_2_Handler()
-{
-  Serial2.IrqHandler();
-}
-void SERCOM3_3_Handler()
-{
-  Serial2.IrqHandler();
-}
+ {
+  Serial2.uart_enable_intr_mask();
+// }
+// void SERCOM3_1_Handler()
+// {
+//   Serial2.IrqHandler();
+// }
+// void SERCOM3_2_Handler()
+// {
+//   Serial2.IrqHandler();
+// }
+// void SERCOM3_3_Handler()
+// {
+//   Serial2.IrqHandler();
+// }
 
 // Serial3
-Uart Serial3 (&sercom4, A3, A2, SERCOM_RX_PAD_1, UART_TX_PAD_0);
-void SERCOM4_0_Handler()
-{
-  Serial3.IrqHandler();
-}
-void SERCOM4_1_Handler()
-{
-  Serial3.IrqHandler();
-}
-void SERCOM4_2_Handler()
-{
-  Serial3.IrqHandler();
-}
-void SERCOM4_3_Handler()
-{
-  Serial3.IrqHandler();
-}
+Serial Serial3 (&sercom4, 13, 12, SERCOM_RX_PAD_1, UART_TX_PAD_0);
+//void SERCOM4_0_Handler()
+// {
+//   Serial3.IrqHandler();
+// }
+// void SERCOM4_1_Handler()
+// {
+//   Serial3.IrqHandler();
+// }
+// void SERCOM4_2_Handler()
+// {
+//   Serial3.IrqHandler();
+// }
+// void SERCOM4_3_Handler()
+// {
+//   Serial3.IrqHandler();
+// }
 
 // Serial4
-Uart Serial4 (&sercom0, A1, A4, SERCOM_RX_PAD_1, UART_TX_PAD_0);
-void SERCOM0_0_Handler()
-{
-  Serial4.IrqHandler();
-}
-void SERCOM0_1_Handler()
-{
-  Serial4.IrqHandler();
-}
-void SERCOM0_2_Handler()
-{
-  Serial4.IrqHandler();
-}
-void SERCOM0_3_Handler()
-{
-  Serial4.IrqHandler();
-}
+// Uart Serial4 (&sercom0, A1, A4, SERCOM_RX_PAD_1, UART_TX_PAD_0);
+// void SERCOM0_0_Handler()
+// {
+//   Serial4.IrqHandler();
+// }
+// void SERCOM0_1_Handler()
+// {
+//   Serial4.IrqHandler();
+// }
+// void SERCOM0_2_Handler()
+// {
+//   Serial4.IrqHandler();
+// }
+// void SERCOM0_3_Handler()
+// {
+//   Serial4.IrqHandler();
+// }
 
 // GPS update callbacks
 void onRmcUpdate(nmea::RmcData const);
@@ -101,9 +110,9 @@ void onGgaUpdate(nmea::GgaData const);
 
 // rename serial ports
 #define SERIAL      Serial  // debug serial (USB) all uses should be conditional on DEBUG define
-#define SERIAL_PI   Serial4 // UART to Neo Pi port
+//#define SERIAL_PI   Serial4 // UART to Neo Pi port
 #define SERIAL_IRD  Serial2 // to iridium modem
-#define SERIAL_GPS  Serial3 // to GPS
+#define SERIAL_GPS  Serial2 //Serial3, switched to 2 to get to compile for esp32 // to GPS
 #define SERIAL_BSMS Serial1 // to BSMS 
 
 // TC to digital objects
@@ -130,7 +139,7 @@ TaskHandle_t Handle_prsTask; // barometric sensor task
 TaskHandle_t Handle_radTask; // telem radio task handle
 TaskHandle_t Handle_monitorTask; // debug running task stats over uart task
 TaskHandle_t Handle_bsmsTask; // battery and spectrometer measurement (BSMS) task
-TaskHandle_t Handle_piTask;  // nanoPi data sending task
+//TaskHandle_t Handle_piTask;  // nanoPi data sending task
 TaskHandle_t Handle_dumpTask; // data dump thread
 
 // freeRTOS semaphores
@@ -144,7 +153,7 @@ SemaphoreHandle_t sigSem; // iridium signal quality protector
 SemaphoreHandle_t wbufSem; // SD buffer write semaphore
 SemaphoreHandle_t ledSem; // neopixel semaphore
 SemaphoreHandle_t sdSem; // sd card access
-SemaphoreHandle_t piBufSem; // access to the pi send buffer
+//SemaphoreHandle_t piBufSem; // access to the pi send buffer
 
 // sample periods start off as preconfigured then slowly decrease after re-entry
 uint16_t imu_sample_period = IMU_SAMPLE_PERIOD_MS;
@@ -153,18 +162,18 @@ uint16_t prs_sample_period = PRS_SAMPLE_PERIOD_MS;
 
 // buffers for the pi thread, containing recently created data to be sent to the Pi
 // each lines is a null terminated string to be filled by sprintf
-#define PIBUF1 0
-#define PIBUF2 1
-char  ptxBuf1[PI_BUFFER_LINES][PI_LINE_SIZE];
-char ptxBuf2[PI_BUFFER_LINES][PI_LINE_SIZE];
-int  ptxBuf1Size = 0;
-int  ptxBuf2Size = 0;
-int ptxBuf1LineSize[PI_BUFFER_LINES];
-int ptxBuf2LineSize[PI_BUFFER_LINES];
-int  ptxActiveBuf = PIBUF1;
-volatile bool   ptxBuf1Full = false;
-volatile bool   ptxBuf2Full = false;
-packet_t piPacket; // for data coming back from the pi
+// #define PIBUF1 0
+// #define PIBUF2 1
+// char  ptxBuf1[PI_BUFFER_LINES][PI_LINE_SIZE];
+// char ptxBuf2[PI_BUFFER_LINES][PI_LINE_SIZE];
+// int  ptxBuf1Size = 0;
+// int  ptxBuf2Size = 0;
+// int ptxBuf1LineSize[PI_BUFFER_LINES];
+// int ptxBuf2LineSize[PI_BUFFER_LINES];
+// int  ptxActiveBuf = PIBUF1;
+// volatile bool   ptxBuf1Full = false;
+// volatile bool   ptxBuf2Full = false;
+// packet_t piPacket; // for data coming back from the pi
 
 // receive and send buffers for iridium transmission
 //uint8_t rbuf[RBUF_SIZE];
@@ -205,7 +214,7 @@ volatile bool irSig = 0;
 volatile bool packetReady = 0;
 volatile bool internalBuildPacket = false;
 volatile bool autoBuildInternal = true;
-volatile bool autoBuildPi = true;
+volatile bool autoBuildPi = false; //disable Pi
 volatile uint16_t abint_period = IRIDIUM_PACKET_PERIOD;
 int gPacketSize = 0;
 char gIrdBuf[SBD_TX_SZ];
@@ -425,11 +434,12 @@ static void dumpThread( void *pvParameters )
       serial_commands_.ReadSerial();
       xSemaphoreGive( dbSem );
     }
-    if( digitalRead(PIN_EXT_INT) == LOW ){
-      myDelayMs(2000);
-      if( digitalRead(PIN_EXT_INT) == LOW )
-        NVIC_SystemReset();
-    }
+    // if( digitalRead(PIN_EXT_INT) == LOW ){
+    //   myDelayMs(2000);
+    //   if( digitalRead(PIN_EXT_INT) == LOW )
+    //     /NVIC_SystemReset();
+        
+    // }
 
     if( doDump ){
 
@@ -687,143 +697,143 @@ int writeToRadBuf(uint8_t ptype, void* data, size_t size) {
 
 // helper to write a packet of data to the logfile
 // ptype is a one byte id, where data holds size bytes of a struct
-int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
-  // get access to ptx buffers for writing
-  if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
-    if( ptxActiveBuf == PIBUF1 ){
+// int writeToPtxBuf(uint8_t ptype, void* data, size_t size) {
+//   // get access to ptx buffers for writing
+//   if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
+//     if( ptxActiveBuf == PIBUF1 ){
 
-      // write packet data as plain csv to an entry in the ptxBuf1 list
-      // incremennt ptxBuf1 entry size by 1
-      ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size], ptype, (uint8_t*)data, size);
-      ptxBuf1LineSize[ptxBuf1Size] = strlen(ptxBuf1[ptxBuf1Size]);
-      ptxBuf1Size++;
+//       // write packet data as plain csv to an entry in the ptxBuf1 list
+//       // incremennt ptxBuf1 entry size by 1
+//       ptxBuf1LineSize[ptxBuf1Size] = writePacketAsPlaintext((char*) ptxBuf1[ptxBuf1Size], ptype, (uint8_t*)data, size);
+//       ptxBuf1LineSize[ptxBuf1Size] = strlen(ptxBuf1[ptxBuf1Size]);
+//       ptxBuf1Size++;
 
-      // check if ptxbuf1 is full, if so set full flag and change active buffer 
-      if( ptxBuf1Size >= PI_BUFFER_LINES ){
-        ptxActiveBuf = PIBUF2;
-        ptxBuf1Full = true;
-      }
-    } else if( ptxActiveBuf == PIBUF2 ){
+//       // check if ptxbuf1 is full, if so set full flag and change active buffer 
+//       if( ptxBuf1Size >= PI_BUFFER_LINES ){
+//         ptxActiveBuf = PIBUF2;
+//         ptxBuf1Full = true;
+//       }
+//     } else if( ptxActiveBuf == PIBUF2 ){
 
-      // write packet data as plain csv to an entry in the ptxBuf12 list
-      // incremennt ptxBuf2 entry size by 1
-      ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size], ptype, (uint8_t*)data, size );
-      ptxBuf2LineSize[ptxBuf2Size] = strlen(ptxBuf2[ptxBuf2Size]);
-      ptxBuf2Size++;
+//       // write packet data as plain csv to an entry in the ptxBuf12 list
+//       // incremennt ptxBuf2 entry size by 1
+//       ptxBuf2LineSize[ptxBuf2Size] = writePacketAsPlaintext( (char*) ptxBuf2[ptxBuf2Size], ptype, (uint8_t*)data, size );
+//       ptxBuf2LineSize[ptxBuf2Size] = strlen(ptxBuf2[ptxBuf2Size]);
+//       ptxBuf2Size++;
 
-      // check if ptxbuf2 is full, if so set full flag and change active buffer 
-      if( ptxBuf2Size >= PI_BUFFER_LINES ){
-        ptxActiveBuf = PIBUF1;
-        ptxBuf2Full = true;
-      }
-    }
-    xSemaphoreGive( piBufSem );
+//       // check if ptxbuf2 is full, if so set full flag and change active buffer 
+//       if( ptxBuf2Size >= PI_BUFFER_LINES ){
+//         ptxActiveBuf = PIBUF1;
+//         ptxBuf2Full = true;
+//       }
+//     }
+//     xSemaphoreGive( piBufSem );
 
-    // return success of writing packet to buffer
-    return 0;
-  } else {
-    // we did not get the semaphore and could not write to buffer
-    return 1;
-  }
-}
+//     // return success of writing packet to buffer
+//     return 0;
+//   } else {
+//     // we did not get the semaphore and could not write to buffer
+//     return 1;
+//   }
+// }
 
 // communicate with NeoPi for packet creation
 // PI boots up after capsule initialization, when the 5v rail is turned on 
-static void piThread(void *pvParameters)
-{
-  // zero out tx lines and line sizes
-  int i, bread = 0;
-  uint8_t *p;
-  unsigned long ptx_timer = 0;
-  memset((uint8_t*)&piPacket, 0, sizeof(packet_t));
-  piPacket.size = (uint16_t)SBD_TX_SZ;
+// static void piThread(void *pvParameters)
+// {
+//   // zero out tx lines and line sizes
+//   int i, bread = 0;
+//   uint8_t *p;
+//   unsigned long ptx_timer = 0;
+//   memset((uint8_t*)&piPacket, 0, sizeof(packet_t));
+//   piPacket.size = (uint16_t)SBD_TX_SZ;
 
-  for( i=0; i<PI_BUFFER_LINES; i++ ){
-    memset(ptxBuf1[i], 0, PI_LINE_SIZE);
-    memset(ptxBuf2[i], 0, PI_LINE_SIZE);
-    ptxBuf1LineSize[i] = 0;
-    ptxBuf2LineSize[i] = 0;
-  }
+//   for( i=0; i<PI_BUFFER_LINES; i++ ){
+//     memset(ptxBuf1[i], 0, PI_LINE_SIZE);
+//     memset(ptxBuf2[i], 0, PI_LINE_SIZE);
+//     ptxBuf1LineSize[i] = 0;
+//     ptxBuf2LineSize[i] = 0;
+//   }
 
-  while (1)
-  {
+//   while (1)
+//   {
 
-    // check if we have been asked to send anything to the Pi
-    // if there are no lines to send, check later
-    if( ptxBuf1Full || ptxBuf2Full ){
-      if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
-        // if buffer 1 is full, send all the lines that are queued
-        if( ptxBuf1Full ){
-          for( i=0; i<ptxBuf1Size; i++ ){
-            SERIAL_PI.write(ptxBuf1[i], ptxBuf1LineSize[i]);
-          }
-          ptxBuf1Size = 0;
-          ptxBuf1Full = false;
-        }
-        // if buffer 2 is full, send all of its lines
-        if( ptxBuf2Full ){
-          for( i=0; i<ptxBuf2Size; i++ ){
-            SERIAL_PI.write(ptxBuf2[i], ptxBuf2LineSize[i]);
-          }
-          ptxBuf2Size = 0;
-          ptxBuf2Full = false;
-        }
-        xSemaphoreGive( piBufSem );
-      }
-    }
+//     // check if we have been asked to send anything to the Pi
+//     // if there are no lines to send, check later
+//     if( ptxBuf1Full || ptxBuf2Full ){
+//       if ( xSemaphoreTake( piBufSem, ( TickType_t ) 200 ) == pdTRUE ) {
+//         // if buffer 1 is full, send all the lines that are queued
+//         if( ptxBuf1Full ){
+//           for( i=0; i<ptxBuf1Size; i++ ){
+//             SERIAL_PI.write(ptxBuf1[i], ptxBuf1LineSize[i]);
+//           }
+//           ptxBuf1Size = 0;
+//           ptxBuf1Full = false;
+//         }
+//         // if buffer 2 is full, send all of its lines
+//         if( ptxBuf2Full ){
+//           for( i=0; i<ptxBuf2Size; i++ ){
+//             SERIAL_PI.write(ptxBuf2[i], ptxBuf2LineSize[i]);
+//           }
+//           ptxBuf2Size = 0;
+//           ptxBuf2Full = false;
+//         }
+//         xSemaphoreGive( piBufSem );
+//       }
+//     }
 
-    // if there are bytes available, its a packet we should send
-    // TODO: add start bytes and checksum to transaction between BSMS and KFC
-    if ( SERIAL_PI.available() ){
+//     // if there are bytes available, its a packet we should send
+//     // TODO: add start bytes and checksum to transaction between BSMS and KFC
+//     if ( SERIAL_PI.available() ){
 
-      // memset((uint8_t*)(&batt_data), 0, sizeof(batt_t));
-      // memset((uint8_t*)(&spec_data), 0, sizeof(spec_t));
-      // uint8_t *b = (uint8_t*)(&batt_data);
-      // uint8_t *p = (uint8_t*)(&spec_data);
-      uint8_t type = SERIAL_PI.read();
+//       // memset((uint8_t*)(&batt_data), 0, sizeof(batt_t));
+//       // memset((uint8_t*)(&spec_data), 0, sizeof(spec_t));
+//       // uint8_t *b = (uint8_t*)(&batt_data);
+//       // uint8_t *p = (uint8_t*)(&spec_data);
+//       uint8_t type = SERIAL_PI.read();
 
-      bread = 0;
+//       bread = 0;
 
-      if( type == PTYPE_PACKET_REQUEST ){
-        ptx_timer = xTaskGetTickCount();
-        p = (uint8_t*)piPacket.data;
-        while(bread < SBD_TX_SZ){
-          if(SERIAL_PI.available()) {
-            *p = SERIAL_PI.read();
-            p++;
-            bread++;
-          } 
-        }
-        ptx_timer = xTaskGetTickCount() - ptx_timer;
+//       if( type == PTYPE_PACKET_REQUEST ){
+//         ptx_timer = xTaskGetTickCount();
+//         p = (uint8_t*)piPacket.data;
+//         while(bread < SBD_TX_SZ){
+//           if(SERIAL_PI.available()) {
+//             *p = SERIAL_PI.read();
+//             p++;
+//             bread++;
+//           } 
+//         }
+//         ptx_timer = xTaskGetTickCount() - ptx_timer;
       
-        #ifdef DEBUG_PI
-        if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
-          Serial.print("PI: packet read took "); Serial.println(ptx_timer);
-          xSemaphoreGive( dbSem );
-        }
-        #endif
-      }
+//         #ifdef DEBUG_PI
+//         if ( xSemaphoreTake( dbSem, ( TickType_t ) 200 ) == pdTRUE ) {
+//           Serial.print("PI: packet read took "); Serial.println(ptx_timer);
+//           xSemaphoreGive( dbSem );
+//         }
+//         #endif
+//       }
 
-      // try to write this data to the log buffer
-      // TODO: don't try forever
-      writeToLogBuf(PTYPE_PACKET, &piPacket, sizeof(packet_t));
+//       // try to write this data to the log buffer
+//       // TODO: don't try forever
+//       writeToLogBuf(PTYPE_PACKET, &piPacket, sizeof(packet_t));
 
-      // send to iridium buffer to be transmitted
-      if ( xSemaphoreTake( irbSem, ( TickType_t )  50 ) == pdTRUE ) {
-        if( !packetReady ){
-          packetReady = true;
-          memcpy(gIrdBuf, piPacket.data, piPacket.size);
-          gPacketSize = piPacket.size;
-        }
-        xSemaphoreGive( irbSem );
-      }
-    }
+//       // send to iridium buffer to be transmitted
+//       if ( xSemaphoreTake( irbSem, ( TickType_t )  50 ) == pdTRUE ) {
+//         if( !packetReady ){
+//           packetReady = true;
+//           memcpy(gIrdBuf, piPacket.data, piPacket.size);
+//           gPacketSize = piPacket.size;
+//         }
+//         xSemaphoreGive( irbSem );
+//       }
+//     }
 
-    taskYIELD();
-  }
+//     taskYIELD();
+//   }
 
-  vTaskDelete( NULL );
-}
+//   vTaskDelete( NULL );
+// }
 
 // dispacth received commands over radio to various system threads
 // only for ground operations, the debug radio is not for use during the actual mission
@@ -892,7 +902,7 @@ void dispatchCommand(int senderId, cmd_t command)
     #endif
 
     // put a request into the buffer to go out to the pi
-    writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
+    //(PTYPE_PACKET_REQUEST, 0, 0);
   }
 
   if( command.cmdid == CMDID_LS ){
@@ -1608,7 +1618,7 @@ void onRmcUpdate(nmea::RmcData const rmc)
   writeToLogBuf(PTYPE_RMC, &data, sizeof(rmc_t));
 
   // try to write to pi output buffer
-  writeToPtxBuf(PTYPE_RMC, &data, sizeof(rmc_t));
+  //writeToPtxBuf(PTYPE_RMC, &data, sizeof(rmc_t));
 
   // try to write to radio debug buffer
   //while( writeToRadBuf(PTYPE_RMC, &data, sizeof(rmc_t)) > 0);
@@ -1718,7 +1728,7 @@ void onGgaUpdate(nmea::GgaData const gga)
   writeToLogBuf(PTYPE_GGA, &data, sizeof(gga_t));
 
   // try to write to pi output buffer
-  writeToPtxBuf(PTYPE_GGA, &data, sizeof(gga_t));
+  //writeToPtxBuf(PTYPE_GGA, &data, sizeof(gga_t));
 
   // try to write to radio debug buffer
   //while( writeToRadBuf(PTYPE_GGA, &data, sizeof(gga_t)) > 0);
@@ -2009,8 +2019,8 @@ static void imuThread( void *pvParameters )
       // #endif
 
       // try to write these data to the pi buffer lines to be sent out over serial
-      writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t));
-      writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t));
+      //writeToPtxBuf( PTYPE_IMU, &imuData, sizeof(imu_t));
+      //writeToPtxBuf( PTYPE_ACC, &accData, sizeof(acc_t));
       //writeToPtxBuf(PTYPE_QUAT, &quatData, sizeof(quat_t));
 
       // #ifdef DEBUG
@@ -2133,7 +2143,7 @@ static void prsThread( void *pvParameters )
       writeToLogBuf(PTYPE_PRS, &data, sizeof(prs_t));
 
       // try to write to pi output buffer
-      writeToPtxBuf(PTYPE_PRS, &data, sizeof(prs_t));
+      //writeToPtxBuf(PTYPE_PRS, &data, sizeof(prs_t));
 
       // try to write to the radio send buffer
       //while( writeToRadBuf(PTYPE_PRS, &data, sizeof(prs_t)) > 0);
@@ -2497,7 +2507,7 @@ static void packetBuildThread( void * pvParameters )
       lastPiAutoBuild = xTaskGetTickCount();
 
       // put a request into the buffer to go out to the pi
-      writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
+      //writeToPtxBuf(PTYPE_PACKET_REQUEST, 0, 0);
 
       #ifdef DEBUG_PI
       if ( xSemaphoreTake( dbSem, ( TickType_t ) 1000 ) == pdTRUE ) {
@@ -2700,7 +2710,7 @@ static void tcThread( void *pvParameters )
       writeToLogBuf(PTYPE_TC, &data, sizeof(tc_t));
 
       // try to write this data to the pi buff 
-      writeToPtxBuf(PTYPE_TC, &data, sizeof(tc_t));
+      //writeToPtxBuf(PTYPE_TC, &data, sizeof(tc_t));
 
       // try to put in the radio send buffer
       //while( writeToRadBuf(PTYPE_TC, &data, sizeof(tc_t)) > 0);
@@ -3057,34 +3067,34 @@ void setup() {
 
   } 
   #if MISSION_ID != MISSION_ROCKSAT
-  else {
-    //USB->DEVICE.CTRLA.bit.ENABLE = 0;                   // Shutdown the USB peripheral
-    //while(USB->DEVICE.SYNCBUSY.bit.ENABLE);             // Wait for synchronization
+  // else {
+  //   //USB->DEVICE.CTRLA.bit.ENABLE = 0;                   // Shutdown the USB peripheral
+  //   //while(USB->DEVICE.SYNCBUSY.bit.ENABLE);             // Wait for synchronization
     
-    PM->SLEEPCFG.bit.SLEEPMODE = 0x4;             // Set up SAMD51 to enter low power STANDBY mode
-    while(PM->SLEEPCFG.bit.SLEEPMODE != 0x4);
+  //   PM->SLEEPCFG.bit.SLEEPMODE = 0x4;             // Set up SAMD51 to enter low power STANDBY mode
+  //   while(PM->SLEEPCFG.bit.SLEEPMODE != 0x4);
     
-    int wokeCount;
+  //   int wokeCount;
     
-    while ( !woke ) {
-      while ( !woke ) {
-          // go to sleep for some period of time
-          // about 16 seconds is max before watchdog in testing
-          int sleepMS = Watchdog.sleep(1000); // in milliseconds
-          // now asleep
-          woke = digitalRead(PIN_EXT_INT);
+  //   while ( !woke ) {
+  //     while ( !woke ) {
+  //         // go to sleep for some period of time
+  //         // about 16 seconds is max before watchdog in testing
+  //         int sleepMS = Watchdog.sleep(1000); // in milliseconds
+  //         // now asleep
+  //         woke = digitalRead(PIN_EXT_INT);
 
-      }
-      // if we wake from vibration moving the activation springs and breaking contact, re-read the interrupt 
-      // pin every 50 ms  for another 250 ms to make sure we are actually free of the KREM
-      // and re-read the interrupt pin
-      for( wokeCount = 0; wokeCount < 5; wokeCount++){
-        delay(50);
-        woke &= digitalRead(PIN_EXT_INT);
-        if (!woke) break;
-      }
-    }
-  }
+  //     }
+  //     // if we wake from vibration moving the activation springs and breaking contact, re-read the interrupt 
+  //     // pin every 50 ms  for another 250 ms to make sure we are actually free of the KREM
+  //     // and re-read the interrupt pin
+  //     for( wokeCount = 0; wokeCount < 5; wokeCount++){
+  //       delay(50);
+  //       woke &= digitalRead(PIN_EXT_INT);
+  //       if (!woke) break;
+  //     }
+  //   }
+  // }
   #endif
 
   
@@ -3099,19 +3109,19 @@ void setup() {
   delay(100);
   SERIAL_GPS.begin(38400); // init gps serial
   delay(10);
-  SERIAL_PI.begin(115200); // init serial to NanoPi
+  //SERIAL_PI.begin(115200); // init serial to NanoPi
   delay(10);
   SERIAL_IRD.begin(9600); // Iridium radio connection
   delay(10);
   SERIAL_BSMS.begin(115200); // serial connection to bsms
 
   // Assign SERCOM functionality to enable 3 more UARTs
-  pinPeripheral(A1, PIO_SERCOM_ALT);
-  pinPeripheral(A4, PIO_SERCOM_ALT);
-  pinPeripheral(A2, PIO_SERCOM_ALT);
-  pinPeripheral(A3, PIO_SERCOM_ALT);
-  pinPeripheral(13, PIO_SERCOM);
-  pinPeripheral(12, PIO_SERCOM);
+  //pinPeripheral(A1, PIO_SERCOM_ALT);
+  //pinPeripheral(A4, PIO_SERCOM_ALT);
+//  pinPeripheral(A2, PIO_SERCOM_ALT);
+ // pinPeripheral(A3, PIO_SERCOM_ALT);
+  //pinPeripheral(13, PIO_SERCOM);
+ // pinPeripheral(12, PIO_SERCOM);
 
   led.begin();
   led.setPixelColor(0, led.Color(0, 0, 0));
@@ -3238,11 +3248,11 @@ void setup() {
       xSemaphoreGive( ( sdSem ) );  // make available
   }
   // setup sd sem
-  if ( piBufSem == NULL ) {
-    piBufSem = xSemaphoreCreateMutex();  // create mutex
-    if ( ( piBufSem ) != NULL )
-      xSemaphoreGive( ( piBufSem ) );  // make available
-  }
+  // if ( piBufSem == NULL ) {
+  //   piBufSem = xSemaphoreCreateMutex();  // create mutex
+  //   if ( ( piBufSem ) != NULL )
+  //     xSemaphoreGive( ( piBufSem ) );  // make available
+  // }
 
   #ifdef DEBUG
   SERIAL.println("Created semaphores...");
@@ -3258,7 +3268,7 @@ void setup() {
   xTaskCreate(imuThread,  "IMU reading", 512, NULL, tskIDLE_PRIORITY, &Handle_imuTask);
   xTaskCreate(gpsThread,  "GPS Reception", 512, NULL, tskIDLE_PRIORITY, &Handle_gpsTask);
   xTaskCreate(packetBuildThread, "Packaging", 1024, NULL, tskIDLE_PRIORITY+1, &Handle_packetBuildTask);
-  xTaskCreate(piThread,  "NanoPi", 1024, NULL, tskIDLE_PRIORITY, &Handle_piTask);
+  //xTaskCreate(piThread,  "NanoPi", 1024, NULL, tskIDLE_PRIORITY, &Handle_piTask);
   #ifdef USE_DEBUG_RADIO
   xTaskCreate(radThread, "Telem radio", 1024, NULL, tskIDLE_PRIORITY, &Handle_radTask);
   #endif

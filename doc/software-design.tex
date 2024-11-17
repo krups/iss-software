@@ -1,9 +1,9 @@
-\documentclass{article}
+\documentclass{book}
 \usepackage[utf8]{inputenc}
 
-\title{KREPE Flight Computer Software and Safety Verification}
-\author{Matt Ruffner}
-\date{March 2020}
+\title{Space Systems Lab Firmware and Mission Requirements Document}
+\author{Hersch Nathan}
+\date{November 2024}
 
 \usepackage{url}
 \usepackage{float}
@@ -23,65 +23,99 @@
 
 \maketitle
 
-\section{General Requirements Compliance}
-Upon both power up (after primary activation via pull-tab) and detection of a termination or off-nominal power condition, the Teensy processor will enter a safe reset state, where all GPIO pins controlling critical system functions are set to a high impedance value. This high impedance state, in addition to the flight computer PCB, ensure requirements in the \textit{General Requirements for the Computer-Based Control System Safety Requirements for the ISS} are met. Overcurrent and undervoltage protection for battery cells is implemented upstream of the flight computer, limiting the off-nominal power conditions expected (see KREPE Flight Computer Hardware Manual). See Fig. \ref{fig:exec-lifecycle} for an overview of the main execution lifecycle and how upon both power up and detection of an abnormal power condition both put the CBCS back into the safe high impedance state. CBCS General Requirements are discussed below.
+\section{General Requirements}
+\par This software is to support the KRUPS missions. The current mission is KRUPS Aboard Norwegian GhostSat (KANGS). The hardware paradim is based around an ESP32-S3. 
+\par This work is porting Matt Ruffner's firmware for Adafruit Feather M0/M4 to the ESP32-S3. This including switching from the Arduino IDE to ESP-IDF.
+\par The goal of this project is to make the firmware more modular and configurable for each mission and hardware.
+\par The first chapter of this document outlines the over all architechure design and background information for this project. The second chapter rt details each libraries, drives, wrappers, and other software components that we wrote for this project. It provides design decisions and the reasoning behind them aswell as how to interface with them. The third and on details the software requirements for each hardware component for each mission.
 
-\subsection{Req. 3.1.1.1}
-Teensy 3.5 controller documentation shows that the controller powers up into the known safe reset state. No outputs occur until the processing state is initiated (see Fig. \ref{fig:exec-lifecycle}). Verification for this requirement will monitor the state of Teensy output pins with external hardware upon power up to make sure specific signals (i.e. iridium soli state relay activation signal) do not transition unexpectedly. 
+\tableofcontents
 
-\subsection{Req. 3.1.1.2}
-KREPE flight computer software on the Teensy 3.5 controller enters a safe state in the event that a termination condition is detected (e.g. low system battery  voltage; see Fig. \ref{fig:exec-lifecycle}). As the KREPE capsule is incapable of receiving any external commands, the detection of a termination command scenario is not applicable. Testing for compliance with this requirement entails monitoring of Flight computer pin state with external hardware while the system experiences low battery voltage to make sure it places critical pins in a high impedance or off state.
+\chapter{Architechure Design} 
+\section{Background Information}
 
-\subsection{Req. 3.1.1.3}
-The KREPE battery protection subsystem prevents any overcurrent or undervoltage conditions from reaching the flight computer. The main off-nominal power condition the flight computer may encounter is power failure. The Teensy 3.5 controller features a power management controller that will place it in a safe reset state if a power failure is detected. The KREPE flight computer also  monitors system battery voltage to preemtively detect an off-nominal power condition and place the system in the safe state (see Fig. \ref{fig:exec-lifecycle}).
+\subsection{freeRTOS}
+\par freeRTOS is a real time operating system. A real time operating system works by having tasks that run at different priorities. The tasks are scheduled by the operating system and those tasks occur through a determanistic prosess. The tasks can communicate with each other using message queues. The tasks can also synchronize with each other using semaphores.
 
-\begin{figure}
-  \centering
-  \includegraphics[width=0.75\textwidth]{images/software-overview.png}
-  \caption{Overview of main execution cycle showing return to safe high-Z reset state upon startup and abnormal power condition.}
-  \label{fig:exec-lifecycle}
+\subsection{ESP-IDF}
+\par ESP-IDF is the Espressif IoT Development Framework. It is the official development framework for the ESP32 and ESP32-S3. It is a set of libraries and tools that are used to develop software for the ESP32 and ESP32-S3.
+
+\section{Overall Architecture Design}
+\par The firmware's framework is designed to be modular and configerable thmission and each hardware. The backbone of the firmware is using freeRTOS tasks to handle the different modules. Each taks is its own module that encapsulates the relevant hardware. The tasks communicate with each other using a publisher/subscriber model.
+
+\begin{figure} [H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/firmware-architecture.png}
+    \caption{Firmware Architecture}
+    \label{fig:firmware-architecture} 
 \end{figure}
 
-\subsection{3.1.1.4}
-N/A
+\par In the figure \ref{fig:firmware-architecture}, the main tasks there are four types of tasks. 
+\subsection{Task}
+\subsubsection{Sensor Tasks}
+\par Each sensor task manages one sensor or group of sensors, see \ref{fig:sensor-architecture}. At startup it configures the sensors with the necessary parameters, then it calls a looping task. That task, takes the semaphore for the used serial communication interface (I2C, SPI, UART, etc). It sends the command to the sensor to get the data, reads the response, and then releases the semaphore. The task then sends the data to the packet build tasks queues.
 
-\subsection{3.1.1.5}
-N/A
+\begin{figure} [H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{images/sensor-architechure.png}
+    \caption{Sensor Task Architecture}
+    \label{fig:sensor-architecture} 
+\end{figure} 
 
-\subsection{3.1.1.6}
-The metal enclosure that houses the KREPE module acts as a Faraday cage and mitigates the risk imposed to the CBCS by inadvertent memory modification.
+\subsubsection{Packet Build Tasks}
+\subsubsection{Wireless Communication Tasks}
+\subsubsection{Deployment Tasks}
 
-\subsection{3.1.1.7}
-Upon detection of an anomaly internal to the CBCS there is watchdog timer functionality that will return the CBCS to the known safe initialization state. Verification procedures for this requirement entail physical disruption/disconnection of flight computer hardware to ensure control software can recover.
+\subsection{Middleware}
 
-\subsection{3.1.1.8}
-The external sources in this case would be the ambient temperature of capsule and the presence of the metal enclosure around the KREPE capsule. The capsule uses the Fault flags on the thermocouple to digital converter are used to discern if a valid thermocouple reading has been collected or not. There are also multiple thermocouples whos values are cross checked for consistency in valid readings. Capacitive sensing is also used to detect the presence of the metal enclosure around the KREPE capsule. Both of these inputs are used to discern between valid and invalid input.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Software Componets %%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Software Components}
 
-Verification for this requirement entails physical disconnection/perturbation of thermocouple and capacitive sensing leads to analyze the induced effect on measurement values and fault conditions. 
+\section{Wrappers}
 
-\subsection{3.1.1.9}
-See Fig. \ref{fig:exec-lifecycle} for KREPE software design requirements.
-
-\subsection{3.1.1.10}
-Full system software is available upon request.
-
-\subsection{3.1.1.11}
-No external data or command transmissions are made prior to activation of Iridium radio. We stay dormant until secondary activation, this req looks like it applies to much more sophisticated craft. The KREPE capsule is a highly integrated device comprised of only one flight computer PCB and radio module. Integrity checks are preformed by the Iridium radio module to verify a correct command was sent. Prior to secondary activation, integrity checks are also performed on readings from secondary activation decision sources (thermocouples) to ensure errant reading do not trigger an activation (see Req. 3.1.1.8).
-
-\subsection{3.1.1.12}
-N/A
-
-\subsection{3.1.1.13}
-N/A
+\subsection{I2C Wrapper}
+%%\par TODO note define CONFIG_I2C_TIMEOUT_MS = 1000
+%% https://github.com/UncleRus/esp-idf-lib/tree/master/components/i2cdev
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Missions %%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{KRUPS Aboard Norwegian GhostSat (KANG)}
+\section{Kentucky Flight Computer (KFC) Requirements}
+
+\section{FemptoSats Requirements}
+\par The FemptoSats submission is to test the viability of using Wifi/LoRa for intercapsuole communication. 
+
+\subsection{Sensors Requirements}
+\par The FemptoSats will have the following sensors: 
+\begin{itemize}
+    \item BME280 Temperature/pressure/humidity sensor
+    \item BNO086 9 - Axis IMU
+\end{itemize}
+
+\subsubsection{BME280 Temperature/pressure/humidity sensor}
+\par The BME280 will be run with the following configuration settings: 
+
+\subsubsection{BNO086 9 - Axis IMU}
+\par The BNO086 will be run with the following configuration settings:
+
+\subsection{Wireless Communcation Requirements}
+\par the FemptoSat will use the following Wireless Communcation modules:
+\begin{itemize}
+    \item Integrated Wifi
+    \item LoRa
+\end{itemize}
+\par The Wifi will fail over to the LoRa when the Wifi gets out of range
+
+\section{Rocketstation Transmitter (RST) Requirements}
+\par uart to raspi to shut off need
+
+\section{Rocketstation Requirements}
+\par uart to raspi to shut off need
+\section{Groundstation Requirements}
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  APPENDIX
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
 %\appendix
 
 %\newpage
