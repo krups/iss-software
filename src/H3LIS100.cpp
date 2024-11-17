@@ -4,7 +4,7 @@
 
 #include "H3LIS100.h"
 
-//#include <avr/pgmspace.h>
+#include <avr/pgmspace.h>
 #include <limits.h>
 #include "pins_arduino.h"
 #include "wiring_private.h"
